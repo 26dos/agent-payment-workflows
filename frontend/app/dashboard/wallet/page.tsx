@@ -29,7 +29,8 @@ import {
   CheckCircle2, 
   AlertCircle,
   Shield,
-  AlertTriangle
+  AlertTriangle,
+  Scale
 } from 'lucide-react';
 
 export default function WalletPage() {
@@ -139,6 +140,19 @@ export default function WalletPage() {
   const [mandateDailyLimit, setMandateDailyLimit] = useState('10000');
   const [mandateSingleLimit, setMandateSingleLimit] = useState('1000');
 
+  // State for dispute resolution
+  const [disputeTaskId, setDisputeTaskId] = useState('');
+  const [requesterPercent, setRequesterPercent] = useState('50');
+
+  // Resolve Dispute
+  const { 
+    writeContract: writeResolveDispute, 
+    data: resolveDisputeHash, 
+    isPending: isResolveDisputePending,
+    error: resolveDisputeError 
+  } = useWriteContract();
+  const { isLoading: isResolveDisputeConfirming, isSuccess: isResolveDisputeSuccess } = useWaitForTransactionReceipt({ hash: resolveDisputeHash });
+
   // ===== Handlers =====
 
   const handleFaucet = () => {
@@ -210,6 +224,17 @@ export default function WalletPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
+  };
+
+  const handleResolveDispute = () => {
+    if (!disputeTaskId || requesterPercent === '') return;
+    writeResolveDispute({
+      address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: 'resolveDispute',
+      args: [BigInt(disputeTaskId), Number(requesterPercent)],
+      gas: BigInt(500000),
+    });
   };
 
   // Refetch data after successful transactions
@@ -695,6 +720,86 @@ export default function WalletPage() {
             <p className="text-xs text-muted-foreground">
               Escrow contract: {formatAddress(CONTRACT_ADDRESSES.Escrow, 8)}
             </p>
+          </CardContent>
+        </Card>
+
+        {/* Step 5: Resolve Dispute (Owner Only) */}
+        <Card className="border-orange-200 bg-orange-50/30">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="text-xs bg-orange-100 text-orange-700">Admin</Badge>
+              <CardTitle className="flex items-center gap-2">
+                <Scale className="h-5 w-5 text-orange-600" />
+                Resolve Dispute
+              </CardTitle>
+            </div>
+            <CardDescription>Arbitrate disputed tasks (Contract Owner only)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg bg-orange-100/50 p-3 text-sm text-orange-700">
+              <p className="font-medium">How it works:</p>
+              <ul className="mt-1 list-disc list-inside text-xs space-y-1">
+                <li>requesterPercent = 100: Full refund to Requester, Provider penalized</li>
+                <li>requesterPercent = 0: Full payment to Provider, Requester penalized</li>
+                <li>requesterPercent = 50: Split 50/50, no penalty</li>
+              </ul>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Chain Task ID</label>
+              <Input
+                type="number"
+                value={disputeTaskId}
+                onChange={(e) => setDisputeTaskId(e.target.value)}
+                placeholder="e.g. 4"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Requester Percent (0-100)</label>
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                value={requesterPercent}
+                onChange={(e) => setRequesterPercent(e.target.value)}
+                placeholder="50"
+              />
+              <p className="text-xs text-muted-foreground">
+                % of escrowed funds returned to Requester
+              </p>
+            </div>
+
+            <Button
+              onClick={handleResolveDispute}
+              disabled={!disputeTaskId || requesterPercent === '' || isResolveDisputePending || isResolveDisputeConfirming}
+              className="w-full bg-orange-600 hover:bg-orange-700"
+            >
+              {isResolveDisputePending || isResolveDisputeConfirming ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  {isResolveDisputePending ? 'Confirm in wallet...' : 'Resolving...'}
+                </>
+              ) : (
+                <>
+                  <Scale className="mr-2 h-4 w-4" />
+                  Resolve Dispute
+                </>
+              )}
+            </Button>
+
+            {isResolveDisputeSuccess && (
+              <div className="flex items-center gap-2 rounded-lg bg-green-50 p-3 text-sm text-green-600">
+                <CheckCircle2 className="h-4 w-4" />
+                Dispute resolved successfully! Reputation scores updated.
+              </div>
+            )}
+            {resolveDisputeError && (
+              <div className="flex items-center gap-2 rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                <AlertCircle className="h-4 w-4" />
+                {resolveDisputeError.message.slice(0, 150)}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

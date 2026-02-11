@@ -212,6 +212,16 @@ export const ESCROW_ABI = [
     type: 'function',
   },
   {
+    inputs: [
+      { name: 'taskId', type: 'uint256' },
+      { name: 'requesterPercent', type: 'uint8' },
+    ],
+    name: 'resolveDispute',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
     inputs: [{ name: 'taskId', type: 'uint256' }],
     name: 'getTask',
     outputs: [
