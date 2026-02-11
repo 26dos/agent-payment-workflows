@@ -113,26 +113,36 @@ GRANT ALL PRIVILEGES ON DATABASE clawpay TO clawpay;
 \q
 ```
 
-### 3. 导入表结构
+### 3. 导入数据库
+
+有两种方式导入数据库：
+
+#### 方式一：仅导入表结构（空数据库）
 
 ```bash
 cd /opt/clawpay
 psql -h localhost -U clawpay -d clawpay -f backend/migrations/001_init.sql
 ```
 
-### 4. 从开发环境导入数据（可选）
+#### 方式二：导入完整备份（包含测试数据，推荐）
 
-如果需要导入开发环境的数据：
+仓库中已包含完整的数据库备份文件 `backend/migrations/clawpay_backup.sql`，包含表结构和测试数据：
 
 ```bash
-# 在开发机器上导出
-pg_dump -h localhost -U jiangdanhui -d clawpay > clawpay_backup.sql
+cd /opt/clawpay
+psql -h localhost -U clawpay -d clawpay -f backend/migrations/clawpay_backup.sql
+```
 
-# 传输到测试服务器
-scp clawpay_backup.sql user@test-server:/opt/clawpay/
+### 4. 导出新数据（可选）
 
-# 在测试服务器上导入
-psql -h localhost -U clawpay -d clawpay < /opt/clawpay/clawpay_backup.sql
+如需重新导出最新数据：
+
+```bash
+# 导出完整备份（表结构 + 数据）
+pg_dump -h localhost -U clawpay -d clawpay > backend/migrations/clawpay_backup.sql
+
+# 仅导出数据（表已存在时）
+pg_dump -h localhost -U clawpay -d clawpay --data-only > clawpay_data_only.sql
 ```
 
 ---
