@@ -63,6 +63,7 @@ interface AppState {
 
   // Actions
   setAuth: (token: string, user: User) => void;
+  setUser: (user: User) => void;
   clearAuth: () => void;
   setAgents: (agents: Agent[]) => void;
   addAgent: (agent: Agent) => void;
@@ -91,6 +92,8 @@ export const useAppStore = create<AppState>()(
           user,
           isAuthenticated: true,
         }),
+
+      setUser: (user) => set({ user }),
 
       clearAuth: () =>
         set({
