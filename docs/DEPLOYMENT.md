@@ -28,7 +28,7 @@
 | 软件 | 版本 | 用途 |
 |------|-----|------|
 | Git | 2.0+ | 代码拉取 |
-| Go | 1.21+ | 后端编译 |
+| Go | 1.25+ | 后端编译 |
 | Node.js | 18+ | 前端编译 |
 | PostgreSQL | 14+ | 数据库 |
 | Nginx | 1.18+ | 反向代理 |
@@ -41,9 +41,9 @@
 sudo apt update
 sudo apt install -y git curl wget
 
-# 安装 Go 1.21
-wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
+# 安装 Go 1.25.5
+wget https://go.dev/dl/go1.25.5.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.25.5.linux-amd64.tar.gz
 echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
 source ~/.bashrc
 
