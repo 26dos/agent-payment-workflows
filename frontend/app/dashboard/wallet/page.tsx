@@ -220,7 +220,7 @@ export default function WalletPage() {
 
   const copyAddress = () => {
     if (address) {
-      navigator.clipboard.writeText(address);
+      window.prompt('Copy address:', address);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -430,7 +430,7 @@ export default function WalletPage() {
                 <div 
                   className="rounded-lg bg-muted p-3 cursor-pointer hover:bg-muted/80 transition-colors group"
                   onClick={() => {
-                    navigator.clipboard.writeText(onChainHumanDID as string);
+                    window.prompt('Copy DID:', onChainHumanDID as string);
                     alert(`Copied: ${onChainHumanDID}`);
                   }}
                   title="Click to copy full DID"
@@ -516,7 +516,7 @@ export default function WalletPage() {
                         key={i} 
                         className="rounded bg-muted/50 p-2 cursor-pointer hover:bg-muted transition-colors group"
                         onClick={() => {
-                          navigator.clipboard.writeText(did);
+                          window.prompt('Copy DID:', did);
                           alert(`Copied: ${did}`);
                         }}
                         title={`Click to copy full DID: ${did}`}
