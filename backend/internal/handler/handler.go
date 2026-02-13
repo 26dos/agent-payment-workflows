@@ -258,7 +258,9 @@ func (h *Handler) UpdateAgentDID(c *gin.Context) {
 
 type CreateTaskRequest struct {
 	RequesterDID string  `json:"requester_did" binding:"required"`
-	ProviderDID  string  `json:"provider_did" binding:"required"`
+	ProviderDID  *string `json:"provider_did"` // Optional for marketplace tasks
+	Title        string  `json:"title"`
+	Description  string  `json:"description"`
 	BaseAmount   float64 `json:"base_amount" binding:"required"`
 	Complexity   int     `json:"complexity" binding:"required,min=1,max=3"`
 	Metadata     string  `json:"metadata"`
@@ -275,6 +277,8 @@ func (h *Handler) CreateTask(c *gin.Context) {
 	task := &model.Task{
 		RequesterDID: req.RequesterDID,
 		ProviderDID:  req.ProviderDID,
+		Title:        req.Title,
+		Description:  req.Description,
 		BaseAmount:   req.BaseAmount,
 		Complexity:   req.Complexity,
 		Metadata:     req.Metadata,
@@ -326,7 +330,11 @@ func (h *Handler) GetTask(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
-// AcceptTask marks a task as accepted
+type AcceptTaskRequest struct {
+	ProviderDID string `json:"provider_did" binding:"required"`
+}
+
+// AcceptTask marks a task as accepted by a provider
 func (h *Handler) AcceptTask(c *gin.Context) {
 	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil {
@@ -334,7 +342,13 @@ func (h *Handler) AcceptTask(c *gin.Context) {
 		return
 	}
 
-	if err := h.svc.AcceptTask(c.Request.Context(), taskID); err != nil {
+	var req AcceptTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := h.svc.AcceptTaskWithProvider(c.Request.Context(), taskID, req.ProviderDID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to accept task"})
 		return
 	}
@@ -518,4 +532,173 @@ func (h *Handler) GetActivityLogs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, logs)
+}
+
+// ============ Public API Handlers (No Auth Required) ============
+
+// GetPublicTasks returns all open tasks for public viewing
+func (h *Handler) GetPublicTasks(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+	tasks, err := h.svc.GetPublicTasks(c.Request.Context(), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get tasks"})
+		return
+	}
+
+	total, err := h.svc.GetPublicTasksCount(c.Request.Context())
+	if err != nil {
+		total = len(tasks)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tasks": tasks,
+		"total": total,
+		"limit": limit,
+		"offset": offset,
+	})
+}
+
+// GetPublicTask returns a specific task for public viewing
+func (h *Handler) GetPublicTask(c *gin.Context) {
+	taskID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid task ID"})
+		return
+	}
+
+	task, err := h.svc.GetTaskByID(c.Request.Context(), taskID)
+	if err != nil || task == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Task not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, task)
+}
+
+// GetPublicAgents returns all agents for public viewing
+func (h *Handler) GetPublicAgents(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	offset, _ := strconv.Atoi(c.DefaultQuery("offset", "0"))
+
+	agents, err := h.svc.GetPublicAgents(c.Request.Context(), limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get agents"})
+		return
+	}
+
+	total, err := h.svc.GetPublicAgentsCount(c.Request.Context())
+	if err != nil {
+		total = len(agents)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"agents": agents,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
+}
+
+// GetPublicAgent returns a specific agent for public viewing
+func (h *Handler) GetPublicAgent(c *gin.Context) {
+	agentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid agent ID"})
+		return
+	}
+
+	agent, err := h.svc.GetAgentByID(c.Request.Context(), agentID)
+	if err != nil || agent == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Agent not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, agent)
+}
+
+// ============ Batch Chain Handlers ============
+
+// GetPendingChainTasks returns tasks pending for on-chain batch
+func (h *Handler) GetPendingChainTasks(c *gin.Context) {
+	count, err := h.svc.GetPendingChainTasksCount(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get pending tasks"})
+		return
+	}
+
+	tasks, err := h.svc.GetPendingChainTasks(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get pending tasks"})
+		return
+	}
+
+	config, _ := h.svc.GetBatchChainConfig(c.Request.Context())
+
+	c.JSON(http.StatusOK, gin.H{
+		"count":  count,
+		"tasks":  tasks,
+		"config": config,
+	})
+}
+
+type BatchChainRequest struct {
+	TaskIDs []int64 `json:"task_ids"`
+}
+
+// TriggerBatchChain manually triggers batch chaining for selected or all pending tasks
+func (h *Handler) TriggerBatchChain(c *gin.Context) {
+	var req BatchChainRequest
+	c.ShouldBindJSON(&req) // Optional body
+
+	batchID, err := h.svc.TriggerBatchChain(c.Request.Context(), req.TaskIDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to trigger batch chain: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":  "Batch chain triggered",
+		"batch_id": batchID,
+	})
+}
+
+type UpdateBatchConfigRequest struct {
+	TaskCount       int  `json:"task_count"`
+	IntervalMinutes int  `json:"interval_minutes"`
+	AutoEnabled     bool `json:"auto_enabled"`
+}
+
+// UpdateBatchConfig updates the batch chain configuration
+func (h *Handler) UpdateBatchConfig(c *gin.Context) {
+	var req UpdateBatchConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	config := &model.BatchChainConfig{
+		TaskCount:       req.TaskCount,
+		IntervalMinutes: req.IntervalMinutes,
+		AutoEnabled:     req.AutoEnabled,
+	}
+
+	if err := h.svc.UpdateBatchChainConfig(c.Request.Context(), config); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update config"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Config updated"})
+}
+
+// GetBatchConfig returns the current batch chain configuration
+func (h *Handler) GetBatchConfig(c *gin.Context) {
+	config, err := h.svc.GetBatchChainConfig(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get config"})
+		return
+	}
+
+	c.JSON(http.StatusOK, config)
 }

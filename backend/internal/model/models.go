@@ -18,36 +18,42 @@ type User struct {
 
 // Agent represents an AI agent with a Sub-DID
 type Agent struct {
-	ID            int64      `json:"id" db:"id"`
-	UserID        int64      `json:"user_id" db:"user_id"`
-	Name          string     `json:"name" db:"name"`
-	SubDID        string     `json:"sub_did" db:"sub_did"`
-	AgentScore    int        `json:"agent_score" db:"agent_score"`
-	DailyLimit    float64    `json:"daily_limit" db:"daily_limit"`
-	SingleLimit   float64    `json:"single_limit" db:"single_limit"`
-	MandateExpiry *time.Time `json:"mandate_expiry" db:"mandate_expiry"`
-	Status        string     `json:"status" db:"status"` // active, inactive
-	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
+	ID             int64      `json:"id" db:"id"`
+	UserID         int64      `json:"user_id" db:"user_id"`
+	Name           string     `json:"name" db:"name"`
+	SubDID         string     `json:"sub_did" db:"sub_did"`
+	AgentScore     int        `json:"agent_score" db:"agent_score"`
+	DailyLimit     float64    `json:"daily_limit" db:"daily_limit"`
+	SingleLimit    float64    `json:"single_limit" db:"single_limit"`
+	MandateExpiry  *time.Time `json:"mandate_expiry" db:"mandate_expiry"`
+	Status         string     `json:"status" db:"status"` // active, inactive
+	TasksCreated   int        `json:"tasks_created" db:"tasks_created"`
+	TasksCompleted int        `json:"tasks_completed" db:"tasks_completed"`
+	TotalEarned    float64    `json:"total_earned" db:"total_earned"`
+	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // Task represents an escrow task
 type Task struct {
-	ID              int64      `json:"id" db:"id"`
-	ChainTaskID     *int64     `json:"chain_task_id" db:"chain_task_id"`
-	RequesterDID    string     `json:"requester_did" db:"requester_did"`
-	ProviderDID     string     `json:"provider_did" db:"provider_did"`
-	BaseAmount      float64    `json:"base_amount" db:"base_amount"`
-	FinalAmount     float64    `json:"final_amount" db:"final_amount"`
-	InsurancePremium float64   `json:"insurance_premium" db:"insurance_premium"`
-	Complexity      int        `json:"complexity" db:"complexity"`
-	Status          TaskStatus `json:"status" db:"status"`
-	Metadata        string     `json:"metadata" db:"metadata"`
-	TxHash          string     `json:"tx_hash" db:"tx_hash"`
-	CreatedAt       time.Time  `json:"created_at" db:"created_at"`
-	AcceptedAt      *time.Time `json:"accepted_at" db:"accepted_at"`
-	CompletedAt     *time.Time `json:"completed_at" db:"completed_at"`
-	ExpiryTime      time.Time  `json:"expiry_time" db:"expiry_time"`
+	ID               int64      `json:"id" db:"id"`
+	ChainTaskID      *int64     `json:"chain_task_id" db:"chain_task_id"`
+	RequesterDID     string     `json:"requester_did" db:"requester_did"`
+	ProviderDID      *string    `json:"provider_did" db:"provider_did"` // Optional until accepted
+	Title            string     `json:"title" db:"title"`
+	Description      string     `json:"description" db:"description"`
+	BaseAmount       float64    `json:"base_amount" db:"base_amount"`
+	FinalAmount      float64    `json:"final_amount" db:"final_amount"`
+	InsurancePremium float64    `json:"insurance_premium" db:"insurance_premium"`
+	Complexity       int        `json:"complexity" db:"complexity"`
+	Status           TaskStatus `json:"status" db:"status"`
+	Metadata         string     `json:"metadata" db:"metadata"`
+	TxHash           string     `json:"tx_hash" db:"tx_hash"`
+	BatchID          *string    `json:"batch_id" db:"batch_id"`
+	CreatedAt        time.Time  `json:"created_at" db:"created_at"`
+	AcceptedAt       *time.Time `json:"accepted_at" db:"accepted_at"`
+	CompletedAt      *time.Time `json:"completed_at" db:"completed_at"`
+	ExpiryTime       time.Time  `json:"expiry_time" db:"expiry_time"`
 }
 
 type TaskStatus string
@@ -110,10 +116,29 @@ type DashboardStats struct {
 
 // PriceCalculation represents a price calculation result
 type PriceCalculation struct {
-	BaseFee        float64 `json:"base_fee"`
-	FinalPrice     float64 `json:"final_price"`
-	KReputation    float64 `json:"k_reputation"`
-	KComplexity    float64 `json:"k_complexity"`
-	KSupplyDemand  float64 `json:"k_supply_demand"`
+	BaseFee          float64 `json:"base_fee"`
+	FinalPrice       float64 `json:"final_price"`
+	KReputation      float64 `json:"k_reputation"`
+	KComplexity      float64 `json:"k_complexity"`
+	KSupplyDemand    float64 `json:"k_supply_demand"`
 	InsurancePremium float64 `json:"insurance_premium"`
+}
+
+// BatchChainConfig represents batch chain configuration
+type BatchChainConfig struct {
+	ID              int64      `json:"id" db:"id"`
+	TaskCount       int        `json:"task_count" db:"task_count"`
+	IntervalMinutes int        `json:"interval_minutes" db:"interval_minutes"`
+	AutoEnabled     bool       `json:"auto_enabled" db:"auto_enabled"`
+	LastBatchAt     *time.Time `json:"last_batch_at" db:"last_batch_at"`
+	UpdatedAt       time.Time  `json:"updated_at" db:"updated_at"`
+}
+
+// AgentStats represents agent statistics for public display
+type AgentStats struct {
+	Agent          Agent   `json:"agent"`
+	TasksCreated   int     `json:"tasks_created"`
+	TasksCompleted int     `json:"tasks_completed"`
+	TotalEarned    float64 `json:"total_earned"`
+	SuccessRate    float64 `json:"success_rate"`
 }

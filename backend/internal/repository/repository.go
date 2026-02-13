@@ -162,28 +162,28 @@ func (r *Repository) UpdateAgentScore(ctx context.Context, did string, score int
 
 func (r *Repository) CreateTask(ctx context.Context, task *model.Task) error {
 	query := `
-		INSERT INTO tasks (chain_task_id, requester_did, provider_did, base_amount, final_amount, insurance_premium, complexity, status, metadata, tx_hash, expiry_time)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO tasks (chain_task_id, requester_did, provider_did, title, description, base_amount, final_amount, insurance_premium, complexity, status, metadata, tx_hash, batch_id, expiry_time)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id, created_at
 	`
 	return r.db.QueryRow(ctx, query,
-		task.ChainTaskID, task.RequesterDID, task.ProviderDID,
+		task.ChainTaskID, task.RequesterDID, task.ProviderDID, task.Title, task.Description,
 		task.BaseAmount, task.FinalAmount, task.InsurancePremium,
-		task.Complexity, task.Status, task.Metadata, task.TxHash, task.ExpiryTime,
+		task.Complexity, task.Status, task.Metadata, task.TxHash, task.BatchID, task.ExpiryTime,
 	).Scan(&task.ID, &task.CreatedAt)
 }
 
 func (r *Repository) GetTaskByID(ctx context.Context, id int64) (*model.Task, error) {
 	query := `
-		SELECT id, chain_task_id, requester_did, provider_did, base_amount, final_amount, insurance_premium,
-		       complexity, status, metadata, tx_hash, created_at, accepted_at, completed_at, expiry_time
+		SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, ''), COALESCE(description, ''), base_amount, final_amount, insurance_premium,
+		       complexity, status, metadata, tx_hash, batch_id, created_at, accepted_at, completed_at, expiry_time
 		FROM tasks WHERE id = $1
 	`
 	task := &model.Task{}
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID,
+		&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID, &task.Title, &task.Description,
 		&task.BaseAmount, &task.FinalAmount, &task.InsurancePremium,
-		&task.Complexity, &task.Status, &task.Metadata, &task.TxHash,
+		&task.Complexity, &task.Status, &task.Metadata, &task.TxHash, &task.BatchID,
 		&task.CreatedAt, &task.AcceptedAt, &task.CompletedAt, &task.ExpiryTime,
 	)
 	if err == pgx.ErrNoRows {
@@ -196,14 +196,14 @@ func (r *Repository) GetTasksByDID(ctx context.Context, did string, asRequester 
 	var query string
 	if asRequester {
 		query = `
-			SELECT id, chain_task_id, requester_did, provider_did, base_amount, final_amount, insurance_premium,
-			       complexity, status, metadata, tx_hash, created_at, accepted_at, completed_at, expiry_time
+			SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, ''), COALESCE(description, ''), base_amount, final_amount, insurance_premium,
+			       complexity, status, metadata, tx_hash, batch_id, created_at, accepted_at, completed_at, expiry_time
 			FROM tasks WHERE requester_did = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 		`
 	} else {
 		query = `
-			SELECT id, chain_task_id, requester_did, provider_did, base_amount, final_amount, insurance_premium,
-			       complexity, status, metadata, tx_hash, created_at, accepted_at, completed_at, expiry_time
+			SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, ''), COALESCE(description, ''), base_amount, final_amount, insurance_premium,
+			       complexity, status, metadata, tx_hash, batch_id, created_at, accepted_at, completed_at, expiry_time
 			FROM tasks WHERE provider_did = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 		`
 	}
@@ -218,9 +218,9 @@ func (r *Repository) GetTasksByDID(ctx context.Context, did string, asRequester 
 	for rows.Next() {
 		task := &model.Task{}
 		err := rows.Scan(
-			&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID,
+			&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID, &task.Title, &task.Description,
 			&task.BaseAmount, &task.FinalAmount, &task.InsurancePremium,
-			&task.Complexity, &task.Status, &task.Metadata, &task.TxHash,
+			&task.Complexity, &task.Status, &task.Metadata, &task.TxHash, &task.BatchID,
 			&task.CreatedAt, &task.AcceptedAt, &task.CompletedAt, &task.ExpiryTime,
 		)
 		if err != nil {
@@ -395,4 +395,171 @@ func (r *Repository) GetDashboardStats(ctx context.Context, userID int64) (*mode
 	}
 
 	return stats, nil
+}
+
+// ============ Public API Repository ============
+
+// GetPublicTasks returns all open tasks (status=created, no provider assigned)
+func (r *Repository) GetPublicTasks(ctx context.Context, limit, offset int) ([]*model.Task, error) {
+	query := `
+		SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, ''), COALESCE(description, ''), base_amount, final_amount, insurance_premium,
+		       complexity, status, metadata, tx_hash, batch_id, created_at, accepted_at, completed_at, expiry_time
+		FROM tasks 
+		WHERE status = 'created'
+		ORDER BY created_at DESC 
+		LIMIT $1 OFFSET $2
+	`
+	rows, err := r.db.Query(ctx, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []*model.Task
+	for rows.Next() {
+		task := &model.Task{}
+		err := rows.Scan(
+			&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID, &task.Title, &task.Description,
+			&task.BaseAmount, &task.FinalAmount, &task.InsurancePremium,
+			&task.Complexity, &task.Status, &task.Metadata, &task.TxHash, &task.BatchID,
+			&task.CreatedAt, &task.AcceptedAt, &task.CompletedAt, &task.ExpiryTime,
+		)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
+// GetPublicTasksCount returns total count of open tasks
+func (r *Repository) GetPublicTasksCount(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks WHERE status = 'created'`).Scan(&count)
+	return count, err
+}
+
+// GetPublicAgents returns all agents with their stats
+func (r *Repository) GetPublicAgents(ctx context.Context, limit, offset int) ([]*model.Agent, error) {
+	query := `
+		SELECT id, user_id, name, sub_did, agent_score, daily_limit, single_limit, mandate_expiry, status,
+		       COALESCE(tasks_created, 0), COALESCE(tasks_completed, 0), COALESCE(total_earned, 0),
+		       created_at, updated_at
+		FROM agents 
+		WHERE sub_did IS NOT NULL AND sub_did != ''
+		ORDER BY agent_score DESC, created_at DESC 
+		LIMIT $1 OFFSET $2
+	`
+	rows, err := r.db.Query(ctx, query, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var agents []*model.Agent
+	for rows.Next() {
+		agent := &model.Agent{}
+		err := rows.Scan(
+			&agent.ID, &agent.UserID, &agent.Name, &agent.SubDID, &agent.AgentScore,
+			&agent.DailyLimit, &agent.SingleLimit, &agent.MandateExpiry, &agent.Status,
+			&agent.TasksCreated, &agent.TasksCompleted, &agent.TotalEarned,
+			&agent.CreatedAt, &agent.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		agents = append(agents, agent)
+	}
+	return agents, nil
+}
+
+// GetPublicAgentsCount returns total count of public agents
+func (r *Repository) GetPublicAgentsCount(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM agents WHERE sub_did IS NOT NULL AND sub_did != ''`).Scan(&count)
+	return count, err
+}
+
+// UpdateTaskProvider sets the provider when someone accepts a task
+func (r *Repository) UpdateTaskProvider(ctx context.Context, taskID int64, providerDID string) error {
+	query := `UPDATE tasks SET provider_did = $1, status = 'accepted', accepted_at = NOW() WHERE id = $2`
+	_, err := r.db.Exec(ctx, query, providerDID, taskID)
+	return err
+}
+
+// ============ Batch Chain Repository ============
+
+// GetPendingChainTasks returns tasks that need to be chained
+// Only excludes tasks that have actually been linked on-chain (chain_task_id IS NOT NULL)
+// Tasks with batch_id but no chain_task_id are included (failed or pending batch)
+func (r *Repository) GetPendingChainTasks(ctx context.Context) ([]*model.Task, error) {
+	query := `
+		SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, ''), COALESCE(description, ''), base_amount, final_amount, insurance_premium,
+		       complexity, status, metadata, tx_hash, batch_id, created_at, accepted_at, completed_at, expiry_time
+		FROM tasks 
+		WHERE chain_task_id IS NULL
+		ORDER BY created_at ASC
+	`
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []*model.Task
+	for rows.Next() {
+		task := &model.Task{}
+		err := rows.Scan(
+			&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID, &task.Title, &task.Description,
+			&task.BaseAmount, &task.FinalAmount, &task.InsurancePremium,
+			&task.Complexity, &task.Status, &task.Metadata, &task.TxHash, &task.BatchID,
+			&task.CreatedAt, &task.AcceptedAt, &task.CompletedAt, &task.ExpiryTime,
+		)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
+// GetPendingChainTasksCount returns count of tasks pending chain
+func (r *Repository) GetPendingChainTasksCount(ctx context.Context) (int, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks WHERE chain_task_id IS NULL`).Scan(&count)
+	return count, err
+}
+
+// UpdateTasksBatch marks tasks as batched
+func (r *Repository) UpdateTasksBatch(ctx context.Context, taskIDs []int64, batchID string) error {
+	query := `UPDATE tasks SET batch_id = $1 WHERE id = ANY($2)`
+	_, err := r.db.Exec(ctx, query, batchID, taskIDs)
+	return err
+}
+
+// GetBatchChainConfig gets the batch config
+func (r *Repository) GetBatchChainConfig(ctx context.Context) (*model.BatchChainConfig, error) {
+	query := `SELECT id, task_count, interval_minutes, auto_enabled, last_batch_at, updated_at FROM batch_chain_config LIMIT 1`
+	config := &model.BatchChainConfig{}
+	err := r.db.QueryRow(ctx, query).Scan(
+		&config.ID, &config.TaskCount, &config.IntervalMinutes, &config.AutoEnabled, &config.LastBatchAt, &config.UpdatedAt,
+	)
+	if err == pgx.ErrNoRows {
+		return nil, nil
+	}
+	return config, err
+}
+
+// UpdateBatchChainConfig updates the batch config
+func (r *Repository) UpdateBatchChainConfig(ctx context.Context, config *model.BatchChainConfig) error {
+	query := `UPDATE batch_chain_config SET task_count = $1, interval_minutes = $2, auto_enabled = $3, updated_at = NOW() WHERE id = $4`
+	_, err := r.db.Exec(ctx, query, config.TaskCount, config.IntervalMinutes, config.AutoEnabled, config.ID)
+	return err
+}
+
+// UpdateBatchLastRun updates the last batch run time
+func (r *Repository) UpdateBatchLastRun(ctx context.Context) error {
+	query := `UPDATE batch_chain_config SET last_batch_at = NOW(), updated_at = NOW()`
+	_, err := r.db.Exec(ctx, query)
+	return err
 }

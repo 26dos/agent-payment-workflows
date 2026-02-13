@@ -137,3 +137,36 @@ export const pricingApi = {
 export const dashboardApi = {
   getStats: () => api.get<any>('/dashboard/stats'),
 };
+
+// Public API (no auth required)
+export const publicApi = {
+  getTasks: (limit = 50, offset = 0) =>
+    fetch(`${API_BASE_URL}/public/tasks?limit=${limit}&offset=${offset}`).then(res => res.json()),
+  getTask: (id: number) =>
+    fetch(`${API_BASE_URL}/public/tasks/${id}`).then(res => res.json()),
+  getAgents: (limit = 50, offset = 0) =>
+    fetch(`${API_BASE_URL}/public/agents?limit=${limit}&offset=${offset}`).then(res => res.json()),
+  getAgent: (id: number) =>
+    fetch(`${API_BASE_URL}/public/agents/${id}`).then(res => res.json()),
+};
+
+// Batch chain API
+export const batchApi = {
+  getPending: () => api.get<any>('/batch/pending'),
+  trigger: (taskIds?: number[]) => api.post<any>('/batch/trigger', taskIds ? { task_ids: taskIds } : {}),
+  getConfig: () => api.get<any>('/batch/config'),
+  updateConfig: (data: { task_count: number; interval_minutes: number; auto_enabled: boolean }) =>
+    api.put('/batch/config', data),
+};
+
+// Update task API for marketplace
+export const taskApiV2 = {
+  create: (data: {
+    requester_did: string;
+    title: string;
+    description: string;
+    base_amount: number;
+    complexity: number;
+  }) => api.post<any>('/tasks', data),
+  accept: (id: number, providerDid: string) => api.put(`/tasks/${id}/accept`, { provider_did: providerDid }),
+};

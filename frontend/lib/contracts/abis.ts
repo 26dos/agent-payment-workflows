@@ -249,6 +249,45 @@ export const ESCROW_ABI = [
     stateMutability: 'view',
     type: 'function',
   },
+  // Batch task creation
+  {
+    inputs: [
+      {
+        components: [
+          { name: 'requesterDID', type: 'bytes32' },
+          { name: 'providerDID', type: 'bytes32' },
+          { name: 'baseFee', type: 'uint256' },
+          { name: 'complexity', type: 'uint8' },
+          { name: 'metadata', type: 'string' },
+        ],
+        name: 'taskInputs',
+        type: 'tuple[]',
+      },
+    ],
+    name: 'createTasksBatch',
+    outputs: [{ name: 'taskIds', type: 'uint256[]' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'maxBatchSize',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  // BatchTasksCreated event
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: false, name: 'taskIds', type: 'uint256[]' },
+      { indexed: true, name: 'creator', type: 'address' },
+      { indexed: false, name: 'totalAmount', type: 'uint256' },
+      { indexed: false, name: 'taskCount', type: 'uint256' },
+    ],
+    name: 'BatchTasksCreated',
+    type: 'event',
+  },
 ] as const;
 
 export const INSURANCE_POOL_ABI = [

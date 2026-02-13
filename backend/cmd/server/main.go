@@ -89,6 +89,15 @@ func main() {
 			auth.POST("/login", h.Login)
 		}
 
+		// Public routes (no auth required)
+		public := api.Group("/public")
+		{
+			public.GET("/tasks", h.GetPublicTasks)
+			public.GET("/tasks/:id", h.GetPublicTask)
+			public.GET("/agents", h.GetPublicAgents)
+			public.GET("/agents/:id", h.GetPublicAgent)
+		}
+
 		// Protected routes
 		protected := api.Group("")
 		protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
@@ -135,6 +144,15 @@ func main() {
 			dashboard := protected.Group("/dashboard")
 			{
 				dashboard.GET("/stats", h.GetDashboardStats)
+			}
+
+			// Batch chain routes (admin)
+			batch := protected.Group("/batch")
+			{
+				batch.GET("/pending", h.GetPendingChainTasks)
+				batch.POST("/trigger", h.TriggerBatchChain)
+				batch.GET("/config", h.GetBatchConfig)
+				batch.PUT("/config", h.UpdateBatchConfig)
 			}
 		}
 	}

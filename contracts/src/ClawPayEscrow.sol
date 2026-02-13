@@ -77,6 +77,19 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
     // Premium split: what % of premium goes to pool vs refund on success
     uint256 public premiumToPoolPercent = 20; // 20% to pool, 80% refund on success
 
+    // Batch task creation limit
+    uint256 public maxBatchSize = 10; // Maximum tasks per batch
+
+    // ============ Structs for Batch ============
+
+    struct BatchTaskInput {
+        bytes32 requesterDID;
+        bytes32 providerDID;
+        uint256 baseFee;
+        uint8 complexity;
+        string metadata;
+    }
+
     // ============ Events ============
 
     event TaskCreated(
@@ -99,6 +112,13 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
     event DisputeRaised(uint256 indexed taskId, bytes32 indexed raisedBy, string reason);
 
     event DisputeResolved(uint256 indexed taskId, uint8 requesterPercent, uint256 requesterAmount, uint256 providerAmount);
+
+    event BatchTasksCreated(
+        uint256[] taskIds,
+        address indexed creator,
+        uint256 totalAmount,
+        uint256 taskCount
+    );
 
     // ============ Modifiers ============
 
@@ -140,6 +160,11 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
     function setPremiumToPoolPercent(uint256 _percent) external onlyOwner {
         require(_percent <= 100, "ClawPayEscrow: invalid percent");
         premiumToPoolPercent = _percent;
+    }
+
+    function setMaxBatchSize(uint256 _maxSize) external onlyOwner {
+        require(_maxSize >= 1 && _maxSize <= 50, "ClawPayEscrow: batch size 1-50");
+        maxBatchSize = _maxSize;
     }
 
     function setContracts(
@@ -222,6 +247,93 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         dynamicPricing.incrementPendingTasks();
 
         emit TaskCreated(taskId, requesterDID, providerDID, baseFee, finalAmount, complexity);
+    }
+
+    /**
+     * @dev Create multiple escrow tasks in a single transaction (batch)
+     * @param taskInputs Array of task inputs
+     * @return taskIds Array of created task IDs
+     */
+    function createTasksBatch(BatchTaskInput[] calldata taskInputs)
+        external
+        nonReentrant
+        returns (uint256[] memory taskIds)
+    {
+        uint256 batchLength = taskInputs.length;
+        require(batchLength > 0, "ClawPayEscrow: empty batch");
+        require(batchLength <= maxBatchSize, "ClawPayEscrow: batch too large");
+
+        taskIds = new uint256[](batchLength);
+        uint256 totalAmount = 0;
+
+        // First pass: validate all tasks and calculate total amount
+        uint256[] memory finalAmounts = new uint256[](batchLength);
+        uint256[] memory premiums = new uint256[](batchLength);
+
+        for (uint256 i = 0; i < batchLength; i++) {
+            BatchTaskInput calldata input = taskInputs[i];
+
+            // Validate DIDs
+            DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(input.requesterDID);
+            DIDRegistry.AgentDID memory provider = didRegistry.getAgentDID(input.providerDID);
+            require(requester.active, "ClawPayEscrow: requester DID not active");
+            require(provider.active, "ClawPayEscrow: provider DID not active");
+
+            // Verify sender is the requester's owner (all tasks must have same owner)
+            DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(requester.humanDID);
+            require(humanDID.owner == msg.sender, "ClawPayEscrow: not requester owner");
+
+            // Validate mandate
+            require(didRegistry.validateMandate(input.requesterDID, input.baseFee), "ClawPayEscrow: mandate validation failed");
+
+            // Calculate final price with dynamic pricing
+            (uint256 finalAmount,,,) =
+                dynamicPricing.calculatePriceDetailed(input.providerDID, input.baseFee, input.complexity);
+
+            // Calculate insurance premium
+            uint256 premium = dynamicPricing.calculateInsurancePremium(input.providerDID, input.baseFee);
+
+            finalAmounts[i] = finalAmount;
+            premiums[i] = premium;
+            totalAmount += finalAmount + premium;
+        }
+
+        // Transfer total funds from sender to escrow in one transaction
+        usd1Token.safeTransferFrom(msg.sender, address(this), totalAmount);
+
+        // Second pass: create all tasks
+        for (uint256 i = 0; i < batchLength; i++) {
+            BatchTaskInput calldata input = taskInputs[i];
+
+            // Record spending against mandate
+            didRegistry.recordSpending(input.requesterDID, finalAmounts[i] + premiums[i]);
+
+            // Create task
+            uint256 taskId = taskCount++;
+            tasks[taskId] = Task({
+                requesterDID: input.requesterDID,
+                providerDID: input.providerDID,
+                baseFee: input.baseFee,
+                finalAmount: finalAmounts[i],
+                insurancePremium: premiums[i],
+                complexity: input.complexity,
+                status: TaskStatus.Created,
+                createdAt: block.timestamp,
+                acceptedAt: 0,
+                completedAt: 0,
+                expiryTime: block.timestamp + defaultExpiryDuration,
+                metadata: input.metadata
+            });
+
+            taskIds[i] = taskId;
+
+            // Update pricing queue
+            dynamicPricing.incrementPendingTasks();
+
+            emit TaskCreated(taskId, input.requesterDID, input.providerDID, input.baseFee, finalAmounts[i], input.complexity);
+        }
+
+        emit BatchTasksCreated(taskIds, msg.sender, totalAmount, batchLength);
     }
 
     // ============ Task Lifecycle ============

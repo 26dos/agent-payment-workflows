@@ -246,12 +246,58 @@ export function useRaiseDispute() {
   return { raiseDispute, hash, isPending, isConfirming, isSuccess, error };
 }
 
+// Batch task creation hook
+export interface BatchTaskInput {
+  requesterDID: `0x${string}`;
+  providerDID: `0x${string}`;
+  baseFee: number;
+  complexity: number;
+  metadata: string;
+}
+
+export function useMaxBatchSize() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+    abi: ESCROW_ABI,
+    functionName: 'maxBatchSize',
+  });
+}
+
+export function useCreateTasksBatch() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const createTasksBatch = (tasks: BatchTaskInput[]) => {
+    // Convert tasks to contract format
+    const taskInputs = tasks.map(task => ({
+      requesterDID: task.requesterDID,
+      providerDID: task.providerDID,
+      baseFee: parseUnits(task.baseFee.toString(), 6),
+      complexity: task.complexity,
+      metadata: task.metadata,
+    }));
+
+    writeContract({
+      address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: 'createTasksBatch',
+      args: [taskInputs],
+      gas: BigInt(500000 * tasks.length), // Scale gas with batch size
+    });
+  };
+
+  return { createTasksBatch, hash, isPending, isConfirming, isSuccess, error };
+}
+
 // Format helpers
 export function formatUSD1(amount: bigint): string {
   return formatUnits(amount, 6);
 }
 
-export function formatDID(did: `0x${string}`): string {
+export function formatDID(did: `0x${string}` | string | null | undefined): string {
+  if (!did) {
+    return 'Not assigned';
+  }
   if (did === '0x0000000000000000000000000000000000000000000000000000000000000000') {
     return 'Not registered';
   }

@@ -110,6 +110,10 @@ func (s *Service) AcceptTask(ctx context.Context, taskID int64) error {
 	return s.repo.UpdateTaskAccepted(ctx, taskID)
 }
 
+func (s *Service) AcceptTaskWithProvider(ctx context.Context, taskID int64, providerDID string) error {
+	return s.repo.UpdateTaskProvider(ctx, taskID, providerDID)
+}
+
 func (s *Service) CompleteTask(ctx context.Context, taskID int64) error {
 	return s.repo.UpdateTaskCompleted(ctx, taskID)
 }
@@ -235,4 +239,97 @@ func (s *Service) CalculatePrice(baseFee float64, complexity int, reputationScor
 // Final_Score = (Human_Score × 0.7) + (Agent_Score × 0.3)
 func (s *Service) CalculateFinalScore(humanScore, agentScore int) int {
 	return int(float64(humanScore)*0.7 + float64(agentScore)*0.3)
+}
+
+// ============ Public API Service ============
+
+func (s *Service) GetPublicTasks(ctx context.Context, limit, offset int) ([]*model.Task, error) {
+	return s.repo.GetPublicTasks(ctx, limit, offset)
+}
+
+func (s *Service) GetPublicTasksCount(ctx context.Context) (int, error) {
+	return s.repo.GetPublicTasksCount(ctx)
+}
+
+func (s *Service) GetPublicAgents(ctx context.Context, limit, offset int) ([]*model.Agent, error) {
+	return s.repo.GetPublicAgents(ctx, limit, offset)
+}
+
+func (s *Service) GetPublicAgentsCount(ctx context.Context) (int, error) {
+	return s.repo.GetPublicAgentsCount(ctx)
+}
+
+// ============ Batch Chain Service ============
+
+func (s *Service) GetPendingChainTasks(ctx context.Context) ([]*model.Task, error) {
+	return s.repo.GetPendingChainTasks(ctx)
+}
+
+func (s *Service) GetPendingChainTasksCount(ctx context.Context) (int, error) {
+	return s.repo.GetPendingChainTasksCount(ctx)
+}
+
+func (s *Service) GetBatchChainConfig(ctx context.Context) (*model.BatchChainConfig, error) {
+	return s.repo.GetBatchChainConfig(ctx)
+}
+
+func (s *Service) UpdateBatchChainConfig(ctx context.Context, config *model.BatchChainConfig) error {
+	// Get existing config to preserve ID
+	existing, err := s.repo.GetBatchChainConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if existing != nil {
+		config.ID = existing.ID
+	}
+	return s.repo.UpdateBatchChainConfig(ctx, config)
+}
+
+// TriggerBatchChain batches tasks for on-chain processing
+func (s *Service) TriggerBatchChain(ctx context.Context, taskIDs []int64) (string, error) {
+	var tasks []*model.Task
+	var err error
+
+	if len(taskIDs) > 0 {
+		// Get specific tasks
+		tasks = make([]*model.Task, 0, len(taskIDs))
+		for _, id := range taskIDs {
+			task, err := s.repo.GetTaskByID(ctx, id)
+			if err != nil {
+				return "", fmt.Errorf("failed to get task %d: %w", id, err)
+			}
+			if task != nil && task.ChainTaskID == nil && task.BatchID == nil {
+				tasks = append(tasks, task)
+			}
+		}
+	} else {
+		// Get all pending tasks
+		tasks, err = s.repo.GetPendingChainTasks(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to get pending tasks: %w", err)
+		}
+	}
+
+	if len(tasks) == 0 {
+		return "", fmt.Errorf("no tasks to batch")
+	}
+
+	// Generate batch ID
+	batchID := fmt.Sprintf("batch_%d_%d", time.Now().Unix(), len(tasks))
+
+	// Collect task IDs
+	ids := make([]int64, len(tasks))
+	for i, t := range tasks {
+		ids[i] = t.ID
+	}
+
+	// Update tasks with batch ID
+	if err := s.repo.UpdateTasksBatch(ctx, ids, batchID); err != nil {
+		return "", fmt.Errorf("failed to update tasks batch: %w", err)
+	}
+
+	// Update last batch time
+	s.repo.UpdateBatchLastRun(ctx)
+
+	return batchID, nil
 }

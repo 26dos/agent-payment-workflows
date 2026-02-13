@@ -10,6 +10,7 @@ import {
   Award,
   Settings,
   LogOut,
+  Link2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/store';
@@ -21,6 +22,7 @@ const navItems = [
   { href: '/dashboard/tasks', label: 'Tasks', icon: ListTodo },
   { href: '/dashboard/wallet', label: 'Wallet', icon: Wallet },
   { href: '/dashboard/reputation', label: 'Reputation', icon: Award },
+  { href: '/dashboard/admin/batch', label: 'Batch On-Chain', icon: Link2 },
 ];
 
 export function Sidebar() {
