@@ -80,6 +80,13 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
     // Batch task creation limit
     uint256 public maxBatchSize = 10; // Maximum tasks per batch
 
+    // Auto-arbitration settings (demo mode: 5 minutes, production: 3 days / 7 days)
+    uint256 public disputeTimeout = 5 minutes; // Time for dispute response before auto-resolve
+    uint256 public completionTimeout = 5 minutes; // Time for task completion after acceptance
+    
+    // Arbitration wallet (for batch record-only operations)
+    address public arbitrationWallet;
+
     // ============ Structs for Batch ============
 
     struct BatchTaskInput {
@@ -87,6 +94,15 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         bytes32 providerDID;
         uint256 baseFee;
         uint8 complexity;
+        string metadata;
+    }
+
+    // Structure for recording completed tasks (no fund transfer)
+    struct RecordTaskInput {
+        bytes32 requesterDID;
+        bytes32 providerDID;
+        uint256 amount;
+        string offchainId; // Off-chain task ID for reference
         string metadata;
     }
 
@@ -118,6 +134,20 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         address indexed creator,
         uint256 totalAmount,
         uint256 taskCount
+    );
+
+    event TaskRecorded(
+        uint256 indexed taskId,
+        bytes32 indexed requesterDID,
+        bytes32 indexed providerDID,
+        uint256 amount,
+        string offchainId
+    );
+
+    event AutoArbitrationTriggered(
+        uint256 indexed taskId,
+        uint8 requesterPercent,
+        string reason
     );
 
     // ============ Modifiers ============
@@ -165,6 +195,21 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
     function setMaxBatchSize(uint256 _maxSize) external onlyOwner {
         require(_maxSize >= 1 && _maxSize <= 50, "ClawPayEscrow: batch size 1-50");
         maxBatchSize = _maxSize;
+    }
+
+    function setArbitrationWallet(address _wallet) external onlyOwner {
+        require(_wallet != address(0), "ClawPayEscrow: invalid wallet");
+        arbitrationWallet = _wallet;
+    }
+
+    function setDisputeTimeout(uint256 _timeout) external onlyOwner {
+        require(_timeout >= 1 minutes && _timeout <= 30 days, "ClawPayEscrow: invalid timeout");
+        disputeTimeout = _timeout;
+    }
+
+    function setCompletionTimeout(uint256 _timeout) external onlyOwner {
+        require(_timeout >= 1 minutes && _timeout <= 60 days, "ClawPayEscrow: invalid timeout");
+        completionTimeout = _timeout;
     }
 
     function setContracts(
@@ -334,6 +379,126 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         }
 
         emit BatchTasksCreated(taskIds, msg.sender, totalAmount, batchLength);
+    }
+
+    /**
+     * @dev Create an open task (no specific provider, anyone can accept)
+     * Funds are locked at creation time
+     */
+    function createOpenTask(
+        bytes32 requesterDID,
+        uint256 baseFee,
+        uint8 complexity,
+        string calldata metadata
+    ) external nonReentrant returns (uint256 taskId) {
+        // Validate requester DID
+        DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(requesterDID);
+        require(requester.active, "ClawPayEscrow: requester DID not active");
+
+        // Verify sender is the requester's owner
+        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(requester.humanDID);
+        require(humanDID.owner == msg.sender, "ClawPayEscrow: not requester owner");
+
+        // Validate mandate
+        require(didRegistry.validateMandate(requesterDID, baseFee), "ClawPayEscrow: mandate validation failed");
+
+        // For open tasks, use base pricing without provider reputation adjustment
+        uint256 finalAmount = baseFee;
+        uint256 premium = (baseFee * 5) / 100; // 5% default premium for open tasks
+
+        // Total amount to lock = finalAmount + premium
+        uint256 totalLock = finalAmount + premium;
+
+        // Transfer funds from sender to escrow
+        usd1Token.safeTransferFrom(msg.sender, address(this), totalLock);
+
+        // Record spending against mandate
+        didRegistry.recordSpending(requesterDID, totalLock);
+
+        // Create task with empty provider DID
+        taskId = taskCount++;
+        tasks[taskId] = Task({
+            requesterDID: requesterDID,
+            providerDID: bytes32(0), // Empty, anyone can accept
+            baseFee: baseFee,
+            finalAmount: finalAmount,
+            insurancePremium: premium,
+            complexity: complexity,
+            status: TaskStatus.Created,
+            createdAt: block.timestamp,
+            acceptedAt: 0,
+            completedAt: 0,
+            expiryTime: block.timestamp + defaultExpiryDuration,
+            metadata: metadata
+        });
+
+        dynamicPricing.incrementPendingTasks();
+
+        emit TaskCreated(taskId, requesterDID, bytes32(0), baseFee, finalAmount, complexity);
+    }
+
+    /**
+     * @dev Accept an open task (any provider can accept)
+     */
+    function acceptOpenTask(uint256 taskId, bytes32 providerDID) external taskExists(taskId) {
+        Task storage task = tasks[taskId];
+        require(task.status == TaskStatus.Created, "ClawPayEscrow: invalid status");
+        require(task.providerDID == bytes32(0), "ClawPayEscrow: not open task");
+        require(block.timestamp < task.expiryTime, "ClawPayEscrow: task expired");
+
+        // Validate provider DID
+        DIDRegistry.AgentDID memory provider = didRegistry.getAgentDID(providerDID);
+        require(provider.active, "ClawPayEscrow: provider DID not active");
+
+        // Verify sender is the provider's owner
+        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(provider.humanDID);
+        require(humanDID.owner == msg.sender, "ClawPayEscrow: not provider owner");
+
+        // Set provider and accept
+        task.providerDID = providerDID;
+        task.status = TaskStatus.Accepted;
+        task.acceptedAt = block.timestamp;
+
+        emit TaskAccepted(taskId, providerDID, block.timestamp);
+    }
+
+    /**
+     * @dev Record completed tasks on-chain (for traceability only, no fund transfer)
+     * Can only be called by arbitration wallet
+     */
+    function recordTasksBatch(RecordTaskInput[] calldata taskInputs) external returns (uint256[] memory taskIds) {
+        require(msg.sender == arbitrationWallet || msg.sender == owner(), "ClawPayEscrow: not authorized");
+        
+        uint256 batchLength = taskInputs.length;
+        require(batchLength > 0, "ClawPayEscrow: empty batch");
+        require(batchLength <= maxBatchSize, "ClawPayEscrow: batch too large");
+
+        taskIds = new uint256[](batchLength);
+
+        for (uint256 i = 0; i < batchLength; i++) {
+            RecordTaskInput calldata input = taskInputs[i];
+
+            // Create task record (already completed, no funds involved)
+            uint256 taskId = taskCount++;
+            tasks[taskId] = Task({
+                requesterDID: input.requesterDID,
+                providerDID: input.providerDID,
+                baseFee: input.amount,
+                finalAmount: input.amount,
+                insurancePremium: 0,
+                complexity: 1,
+                status: TaskStatus.Completed, // Already completed off-chain
+                createdAt: block.timestamp,
+                acceptedAt: block.timestamp,
+                completedAt: block.timestamp,
+                expiryTime: 0,
+                metadata: input.metadata
+            });
+
+            taskIds[i] = taskId;
+
+            emit TaskRecorded(taskId, input.requesterDID, input.providerDID, input.amount, input.offchainId);
+        }
     }
 
     // ============ Task Lifecycle ============
@@ -551,6 +716,101 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         dynamicPricing.decrementPendingTasks();
 
         emit DisputeResolved(taskId, requesterPercent, requesterAmount, providerAmount);
+    }
+
+    /**
+     * @dev Auto-resolve a dispute based on timeout rules
+     * Can be called by anyone after dispute timeout
+     * Rule: If provider raised dispute and requester didn't respond, provider wins
+     *       If requester raised dispute and provider didn't respond, requester wins
+     */
+    function autoResolveDispute(uint256 taskId) external nonReentrant taskExists(taskId) {
+        Task storage task = tasks[taskId];
+        Dispute storage dispute = disputes[taskId];
+
+        require(task.status == TaskStatus.Disputed, "ClawPayEscrow: not disputed");
+        require(!dispute.resolved, "ClawPayEscrow: already resolved");
+        require(block.timestamp >= dispute.raisedAt + disputeTimeout, "ClawPayEscrow: timeout not reached");
+
+        // Auto-resolution rule: non-responding party loses
+        uint8 requesterPercent;
+        string memory reason;
+        
+        if (dispute.raisedBy == task.requesterDID) {
+            // Requester raised, provider didn't respond - requester wins
+            requesterPercent = 100;
+            reason = "Provider timeout";
+        } else {
+            // Provider raised, requester didn't respond - provider wins
+            requesterPercent = 0;
+            reason = "Requester timeout";
+        }
+
+        task.status = TaskStatus.Resolved;
+        dispute.resolved = true;
+        dispute.requesterPercent = requesterPercent;
+
+        // Get addresses
+        DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(task.requesterDID);
+        DIDRegistry.AgentDID memory provider = didRegistry.getAgentDID(task.providerDID);
+        DIDRegistry.HumanDID memory requesterHuman = didRegistry.getHumanDID(requester.humanDID);
+        DIDRegistry.HumanDID memory providerHuman = didRegistry.getHumanDID(provider.humanDID);
+
+        // Calculate and transfer amounts
+        uint256 totalAmount = task.finalAmount;
+        uint256 requesterAmount = (totalAmount * requesterPercent) / 100;
+        uint256 providerAmount = totalAmount - requesterAmount;
+
+        if (requesterAmount > 0) {
+            usd1Token.safeTransfer(requesterHuman.owner, requesterAmount);
+        }
+        if (providerAmount > 0) {
+            usd1Token.safeTransfer(providerHuman.owner, providerAmount);
+        }
+
+        // Insurance premium goes to pool on disputes
+        if (task.insurancePremium > 0) {
+            usd1Token.approve(address(insurancePool), task.insurancePremium);
+            insurancePool.depositPremium(bytes32(taskId), task.insurancePremium);
+        }
+
+        // Penalize the losing party
+        if (requesterPercent == 100) {
+            reputationScore.recordDispute(task.providerDID, 2);
+        } else {
+            reputationScore.recordDispute(task.requesterDID, 2);
+        }
+
+        dynamicPricing.decrementPendingTasks();
+
+        emit AutoArbitrationTriggered(taskId, requesterPercent, reason);
+        emit DisputeResolved(taskId, requesterPercent, requesterAmount, providerAmount);
+    }
+
+    /**
+     * @dev Auto-complete an overdue task in favor of requester
+     * If provider accepted but didn't complete within completion timeout
+     */
+    function autoCompleteOverdue(uint256 taskId) external nonReentrant taskExists(taskId) {
+        Task storage task = tasks[taskId];
+        require(task.status == TaskStatus.Accepted, "ClawPayEscrow: not accepted");
+        require(block.timestamp >= task.acceptedAt + completionTimeout, "ClawPayEscrow: not overdue");
+
+        task.status = TaskStatus.Resolved;
+
+        // Refund full amount to requester
+        DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(task.requesterDID);
+        DIDRegistry.HumanDID memory requesterHuman = didRegistry.getHumanDID(requester.humanDID);
+
+        uint256 refundAmount = task.finalAmount + task.insurancePremium;
+        usd1Token.safeTransfer(requesterHuman.owner, refundAmount);
+
+        // Penalize provider for not completing
+        reputationScore.recordDispute(task.providerDID, 2);
+
+        dynamicPricing.decrementPendingTasks();
+
+        emit AutoArbitrationTriggered(taskId, 100, "Provider completion timeout");
     }
 
     // ============ View Functions ============

@@ -288,6 +288,119 @@ export const ESCROW_ABI = [
     name: 'BatchTasksCreated',
     type: 'event',
   },
+  // Open task creation (no specific provider)
+  {
+    inputs: [
+      { name: 'requesterDID', type: 'bytes32' },
+      { name: 'baseFee', type: 'uint256' },
+      { name: 'complexity', type: 'uint8' },
+      { name: 'metadata', type: 'string' },
+    ],
+    name: 'createOpenTask',
+    outputs: [{ name: 'taskId', type: 'uint256' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // Accept open task
+  {
+    inputs: [
+      { name: 'taskId', type: 'uint256' },
+      { name: 'providerDID', type: 'bytes32' },
+    ],
+    name: 'acceptOpenTask',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // Record tasks batch (for traceability only)
+  {
+    inputs: [
+      {
+        components: [
+          { name: 'requesterDID', type: 'bytes32' },
+          { name: 'providerDID', type: 'bytes32' },
+          { name: 'amount', type: 'uint256' },
+          { name: 'offchainId', type: 'string' },
+          { name: 'metadata', type: 'string' },
+        ],
+        name: 'taskInputs',
+        type: 'tuple[]',
+      },
+    ],
+    name: 'recordTasksBatch',
+    outputs: [{ name: 'taskIds', type: 'uint256[]' }],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // Auto resolve dispute
+  {
+    inputs: [{ name: 'taskId', type: 'uint256' }],
+    name: 'autoResolveDispute',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // Auto complete overdue
+  {
+    inputs: [{ name: 'taskId', type: 'uint256' }],
+    name: 'autoCompleteOverdue',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  // TaskRecorded event
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'taskId', type: 'uint256' },
+      { indexed: true, name: 'requesterDID', type: 'bytes32' },
+      { indexed: true, name: 'providerDID', type: 'bytes32' },
+      { indexed: false, name: 'amount', type: 'uint256' },
+      { indexed: false, name: 'offchainId', type: 'string' },
+    ],
+    name: 'TaskRecorded',
+    type: 'event',
+  },
+  // AutoArbitrationTriggered event
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: 'taskId', type: 'uint256' },
+      { indexed: false, name: 'requesterPercent', type: 'uint8' },
+      { indexed: false, name: 'reason', type: 'string' },
+    ],
+    name: 'AutoArbitrationTriggered',
+    type: 'event',
+  },
+  // Admin functions
+  {
+    inputs: [{ name: '_wallet', type: 'address' }],
+    name: 'setArbitrationWallet',
+    outputs: [],
+    stateMutability: 'nonpayable',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'arbitrationWallet',
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'disputeTimeout',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+  {
+    inputs: [],
+    name: 'completionTimeout',
+    outputs: [{ name: '', type: 'uint256' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
 ] as const;
 
 export const INSURANCE_POOL_ABI = [

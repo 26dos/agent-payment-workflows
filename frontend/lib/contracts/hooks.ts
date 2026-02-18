@@ -289,6 +289,91 @@ export function useCreateTasksBatch() {
   return { createTasksBatch, hash, isPending, isConfirming, isSuccess, error };
 }
 
+// Create open task (no specific provider, anyone can accept)
+export function useCreateOpenTask() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const createOpenTask = (
+    requesterDID: `0x${string}`,
+    amount: number,
+    complexity: number,
+    metadata: string = ''
+  ) => {
+    const amountWithDecimals = parseUnits(amount.toString(), 6);
+    writeContract({
+      address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: 'createOpenTask',
+      args: [requesterDID, amountWithDecimals, complexity, metadata],
+      gas: BigInt(500000),
+    });
+  };
+
+  return { createOpenTask, hash, isPending, isConfirming, isSuccess, error };
+}
+
+// Accept open task
+export function useAcceptOpenTask() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const acceptOpenTask = (taskId: number, providerDID: `0x${string}`) => {
+    writeContract({
+      address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: 'acceptOpenTask',
+      args: [BigInt(taskId), providerDID],
+      gas: BigInt(300000),
+    });
+  };
+
+  return { acceptOpenTask, hash, isPending, isConfirming, isSuccess, error };
+}
+
+// Record tasks batch (for traceability only, no fund transfer)
+export interface RecordTaskInput {
+  requesterDID: `0x${string}`;
+  providerDID: `0x${string}`;
+  amount: number;
+  offchainId: string;
+  metadata: string;
+}
+
+export function useRecordTasksBatch() {
+  const { writeContract, data: hash, isPending, error } = useWriteContract();
+  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
+
+  const recordTasksBatch = (tasks: RecordTaskInput[]) => {
+    const taskInputs = tasks.map(task => ({
+      requesterDID: task.requesterDID,
+      providerDID: task.providerDID,
+      amount: parseUnits(task.amount.toString(), 6),
+      offchainId: task.offchainId,
+      metadata: task.metadata,
+    }));
+
+    writeContract({
+      address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: 'recordTasksBatch',
+      args: [taskInputs],
+      gas: BigInt(300000 * tasks.length),
+    });
+  };
+
+  return { recordTasksBatch, hash, isPending, isConfirming, isSuccess, error };
+}
+
+// Get arbitration wallet address
+export function useArbitrationWallet() {
+  return useReadContract({
+    address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+    abi: ESCROW_ABI,
+    functionName: 'arbitrationWallet',
+  });
+}
+
 // Format helpers
 export function formatUSD1(amount: bigint): string {
   return formatUnits(amount, 6);

@@ -237,6 +237,40 @@ func (r *Repository) UpdateTaskStatus(ctx context.Context, taskID int64, status 
 	return err
 }
 
+func (r *Repository) GetTasksByStatus(ctx context.Context, status model.TaskStatus) ([]*model.Task, error) {
+	query := `
+		SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, '') as title,
+		       COALESCE(description, '') as description, base_amount, final_amount, 
+		       insurance_premium, complexity, status, COALESCE(metadata, '') as metadata,
+		       COALESCE(tx_hash, '') as tx_hash, batch_id, created_at, accepted_at, 
+		       completed_at, expiry_time
+		FROM tasks WHERE status = $1
+		ORDER BY created_at DESC
+	`
+	rows, err := r.db.Query(ctx, query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []*model.Task
+	for rows.Next() {
+		task := &model.Task{}
+		err := rows.Scan(
+			&task.ID, &task.ChainTaskID, &task.RequesterDID, &task.ProviderDID,
+			&task.Title, &task.Description, &task.BaseAmount, &task.FinalAmount,
+			&task.InsurancePremium, &task.Complexity, &task.Status, &task.Metadata,
+			&task.TxHash, &task.BatchID, &task.CreatedAt, &task.AcceptedAt,
+			&task.CompletedAt, &task.ExpiryTime,
+		)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
+}
+
 func (r *Repository) UpdateTaskAccepted(ctx context.Context, taskID int64) error {
 	query := `UPDATE tasks SET status = 'accepted', accepted_at = NOW() WHERE id = $1`
 	_, err := r.db.Exec(ctx, query, taskID)
@@ -489,15 +523,14 @@ func (r *Repository) UpdateTaskProvider(ctx context.Context, taskID int64, provi
 
 // ============ Batch Chain Repository ============
 
-// GetPendingChainTasks returns tasks that need to be chained
-// Only excludes tasks that have actually been linked on-chain (chain_task_id IS NOT NULL)
-// Tasks with batch_id but no chain_task_id are included (failed or pending batch)
+// GetPendingChainTasks returns tasks that need to be recorded on-chain
+// Excludes tasks that have been recorded (tx_hash IS NOT NULL) or linked on-chain (chain_task_id IS NOT NULL)
 func (r *Repository) GetPendingChainTasks(ctx context.Context) ([]*model.Task, error) {
 	query := `
 		SELECT id, chain_task_id, requester_did, provider_did, COALESCE(title, ''), COALESCE(description, ''), base_amount, final_amount, insurance_premium,
 		       complexity, status, metadata, tx_hash, batch_id, created_at, accepted_at, completed_at, expiry_time
 		FROM tasks 
-		WHERE chain_task_id IS NULL
+		WHERE chain_task_id IS NULL AND (tx_hash IS NULL OR tx_hash = '')
 		ORDER BY created_at ASC
 	`
 	rows, err := r.db.Query(ctx, query)
@@ -526,7 +559,7 @@ func (r *Repository) GetPendingChainTasks(ctx context.Context) ([]*model.Task, e
 // GetPendingChainTasksCount returns count of tasks pending chain
 func (r *Repository) GetPendingChainTasksCount(ctx context.Context) (int, error) {
 	var count int
-	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks WHERE chain_task_id IS NULL`).Scan(&count)
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM tasks WHERE chain_task_id IS NULL AND (tx_hash IS NULL OR tx_hash = '')`).Scan(&count)
 	return count, err
 }
 
@@ -534,6 +567,13 @@ func (r *Repository) GetPendingChainTasksCount(ctx context.Context) (int, error)
 func (r *Repository) UpdateTasksBatch(ctx context.Context, taskIDs []int64, batchID string) error {
 	query := `UPDATE tasks SET batch_id = $1 WHERE id = ANY($2)`
 	_, err := r.db.Exec(ctx, query, batchID, taskIDs)
+	return err
+}
+
+// MarkTasksOnChain marks tasks as recorded on-chain with the transaction hash
+func (r *Repository) MarkTasksOnChain(ctx context.Context, taskIDs []int64, txHash string) error {
+	query := `UPDATE tasks SET tx_hash = $1 WHERE id = ANY($2)`
+	_, err := r.db.Exec(ctx, query, txHash, taskIDs)
 	return err
 }
 

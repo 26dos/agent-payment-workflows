@@ -151,6 +151,7 @@ func main() {
 			{
 				batch.GET("/pending", h.GetPendingChainTasks)
 				batch.POST("/trigger", h.TriggerBatchChain)
+				batch.POST("/mark-onchain", h.MarkTasksOnChain)
 				batch.GET("/config", h.GetBatchConfig)
 				batch.PUT("/config", h.UpdateBatchConfig)
 			}
@@ -173,6 +174,30 @@ func main() {
 			log.Fatal().Err(err).Msg("Server failed")
 		}
 	}()
+
+	// Start auto-arbitration background task
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute) // Check every 5 minutes
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+				results, err := svc.RunAutoArbitration(ctx)
+				if err != nil {
+					log.Error().Err(err).Msg("Auto-arbitration failed")
+				} else if len(results) > 0 {
+					log.Info().Int("count", len(results)).Msg("Auto-arbitration resolved disputes")
+					for _, r := range results {
+						log.Info().Int64("taskID", r.TaskID).Int("requesterPercent", r.RequesterPercent).Str("reason", r.Reason).Msg("Dispute auto-resolved")
+					}
+				}
+				cancel()
+			}
+		}
+	}()
+	log.Info().Msg("Auto-arbitration background task started (5 min interval)")
 
 	// Graceful shutdown
 	quit := make(chan os.Signal, 1)

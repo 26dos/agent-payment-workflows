@@ -333,3 +333,109 @@ func (s *Service) TriggerBatchChain(ctx context.Context, taskIDs []int64) (strin
 
 	return batchID, nil
 }
+
+// MarkTasksOnChain marks tasks as recorded on-chain with the transaction hash
+func (s *Service) MarkTasksOnChain(ctx context.Context, taskIDs []int64, txHash string) error {
+	return s.repo.MarkTasksOnChain(ctx, taskIDs, txHash)
+}
+
+// ============ Auto Arbitration Service ============
+
+// AutoArbitrationResult contains the result of an auto-arbitration
+type AutoArbitrationResult struct {
+	TaskID           int64
+	RequesterPercent int
+	Reason           string
+}
+
+// RunAutoArbitration checks for disputes that should be auto-resolved
+// Rules:
+// 1. Dispute timeout (3 days) - non-responding party loses
+// 2. Task completion timeout (7 days after acceptance) - requester wins
+// 3. Provider not delivering - requester wins
+func (s *Service) RunAutoArbitration(ctx context.Context) ([]AutoArbitrationResult, error) {
+	var results []AutoArbitrationResult
+
+	// Get all disputed tasks
+	disputedTasks, err := s.repo.GetTasksByStatus(ctx, model.TaskStatusDisputed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get disputed tasks: %w", err)
+	}
+
+	disputeTimeout := 5 * time.Minute // 5 minutes for demo (production: 3 days)
+
+	for _, task := range disputedTasks {
+		dispute, err := s.repo.GetDisputeByTaskID(ctx, task.ID)
+		if err != nil || dispute == nil || dispute.Resolved {
+			continue
+		}
+
+		// Check if dispute has timed out
+		if time.Since(dispute.CreatedAt) > disputeTimeout {
+			var requesterPercent int
+			var reason string
+
+			// Determine winner based on who raised the dispute
+			if dispute.RaisedByDID == task.RequesterDID {
+				// Requester raised, provider didn't respond - requester wins
+				requesterPercent = 100
+				reason = "Provider timeout - no response"
+			} else {
+				// Provider raised, requester didn't respond - provider wins
+				requesterPercent = 0
+				reason = "Requester timeout - no response"
+			}
+
+			// Auto-resolve the dispute
+			if err := s.ResolveDispute(ctx, task.ID, requesterPercent); err != nil {
+				continue
+			}
+
+			results = append(results, AutoArbitrationResult{
+				TaskID:           task.ID,
+				RequesterPercent: requesterPercent,
+				Reason:           reason,
+			})
+		}
+	}
+
+	// Check for overdue accepted tasks (not completed within timeout)
+	completionTimeout := 5 * time.Minute // 5 minutes for demo (production: 7 days)
+	acceptedTasks, err := s.repo.GetTasksByStatus(ctx, model.TaskStatusAccepted)
+	if err != nil {
+		return results, fmt.Errorf("failed to get accepted tasks: %w", err)
+	}
+
+	for _, task := range acceptedTasks {
+		if task.AcceptedAt == nil {
+			continue
+		}
+
+		// Check if task completion has timed out
+		if time.Since(*task.AcceptedAt) > completionTimeout {
+			// Provider failed to complete - auto-resolve in favor of requester
+			reason := "Provider completion timeout"
+
+			// Create a dispute record for tracking
+			_ = s.RaiseDispute(ctx, task.ID, task.RequesterDID, reason)
+
+			// Immediately resolve in favor of requester
+			if err := s.ResolveDispute(ctx, task.ID, 100); err != nil {
+				continue
+			}
+
+			results = append(results, AutoArbitrationResult{
+				TaskID:           task.ID,
+				RequesterPercent: 100,
+				Reason:           reason,
+			})
+		}
+	}
+
+	return results, nil
+}
+
+// GetTasksByStatus returns tasks with a specific status
+func (s *Service) GetTasksByStatus(ctx context.Context, status model.TaskStatus) ([]*model.Task, error) {
+	return s.repo.GetTasksByStatus(ctx, status)
+}

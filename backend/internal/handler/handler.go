@@ -702,3 +702,33 @@ func (h *Handler) GetBatchConfig(c *gin.Context) {
 
 	c.JSON(http.StatusOK, config)
 }
+
+type MarkTasksOnChainRequest struct {
+	TaskIDs []int64 `json:"task_ids" binding:"required"`
+	TxHash  string  `json:"tx_hash" binding:"required"`
+}
+
+// MarkTasksOnChain marks tasks as recorded on-chain with the transaction hash
+func (h *Handler) MarkTasksOnChain(c *gin.Context) {
+	var req MarkTasksOnChainRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if len(req.TaskIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No task IDs provided"})
+		return
+	}
+
+	if err := h.svc.MarkTasksOnChain(c.Request.Context(), req.TaskIDs, req.TxHash); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to mark tasks: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Tasks marked as on-chain",
+		"count":   len(req.TaskIDs),
+		"tx_hash": req.TxHash,
+	})
+}

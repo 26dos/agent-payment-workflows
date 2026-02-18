@@ -10,11 +10,10 @@ import { Badge } from '@/components/ui/badge';
 import { formatUSD1 } from '@/lib/utils';
 import { CONTRACT_ADDRESSES } from '@/lib/config';
 import { 
-  useCreateTasksBatch, 
+  useRecordTasksBatch, 
   useMaxBatchSize, 
-  useUSD1Approve,
-  useUSD1Balance,
-  BatchTaskInput
+  useArbitrationWallet,
+  RecordTaskInput
 } from '@/lib/contracts/hooks';
 import { 
   ArrowLeft, 
@@ -27,7 +26,8 @@ import {
   Play,
   Clock,
   Hash,
-  Wallet
+  Wallet,
+  FileText
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -60,37 +60,33 @@ export default function BatchChainPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
-  const [approving, setApproving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<number[]>([]);
-  const [step, setStep] = useState<'select' | 'approve' | 'batch'>('select');
 
   // Config form state
   const [taskCount, setTaskCount] = useState(10);
   const [intervalMinutes, setIntervalMinutes] = useState(60);
   const [autoEnabled, setAutoEnabled] = useState(false);
 
-  // Contract hooks
+  // Contract hooks - use recordTasksBatch (no funds involved, just recording)
   const { data: maxBatchSize } = useMaxBatchSize();
-  const { data: usd1Balance } = useUSD1Balance(address);
+  const { data: arbitrationWallet } = useArbitrationWallet();
   const { 
-    createTasksBatch, 
+    recordTasksBatch, 
     hash: batchHash, 
     isPending: isBatching, 
     isConfirming: isBatchConfirming,
     isSuccess: isBatchSuccess,
     error: batchError 
-  } = useCreateTasksBatch();
-  const {
-    approve,
-    hash: approveHash,
-    isPending: isApproving,
-    isConfirming: isApproveConfirming,
-    isSuccess: isApproveSuccess,
-    error: approveError
-  } = useUSD1Approve();
+  } = useRecordTasksBatch();
+
+  // Check if connected wallet is authorized (arbitration wallet or contract owner)
+  const isAuthorized = address && (
+    arbitrationWallet === address || 
+    address.toLowerCase() === '0xd68cc5807d9573a17b731dd7a056fe9da3cfbca9' // Default owner
+  );
 
   useEffect(() => {
     loadData();
@@ -104,40 +100,25 @@ export default function BatchChainPage() {
     }
   }, [config]);
 
-  // Handle approve success
-  useEffect(() => {
-    if (isApproveSuccess && step === 'approve') {
-      setSuccess('Approval successful! Now submitting batch to blockchain...');
-      setStep('batch');
-      submitBatchToChain();
-    }
-  }, [isApproveSuccess]);
-
   // Handle batch success
   useEffect(() => {
-    if (isBatchSuccess && step === 'batch') {
-      setSuccess(`Batch submitted to blockchain! TX: ${batchHash?.slice(0, 16)}...`);
-      setStep('select');
+    if (isBatchSuccess && batchHash) {
+      setSuccess(`Tasks recorded on blockchain! TX: ${batchHash?.slice(0, 16)}...`);
+      setTriggering(false);
+      // Update backend to mark tasks as recorded on-chain with tx hash
+      markTasksAsOnChain(batchHash);
       setSelectedTasks([]);
-      // Update backend to mark tasks as batched
-      markTasksAsBatched();
       loadData();
     }
-  }, [isBatchSuccess]);
+  }, [isBatchSuccess, batchHash]);
 
   // Handle errors
   useEffect(() => {
-    if (approveError) {
-      setError(`Approval failed: ${approveError.message}`);
-      setApproving(false);
-      setStep('select');
-    }
     if (batchError) {
-      setError(`Batch failed: ${batchError.message}`);
+      setError(`Record failed: ${batchError.message}`);
       setTriggering(false);
-      setStep('select');
     }
-  }, [approveError, batchError]);
+  }, [batchError]);
 
   const loadData = async () => {
     try {
@@ -153,11 +134,12 @@ export default function BatchChainPage() {
     }
   };
 
-  const markTasksAsBatched = async () => {
+  const markTasksAsOnChain = async (txHash: string) => {
     try {
-      await batchApi.trigger(selectedTasks.length > 0 ? selectedTasks : undefined);
+      const taskIds = selectedTasks.length > 0 ? selectedTasks : tasks.map(t => t.id);
+      await batchApi.markOnChain(taskIds, txHash);
     } catch (err) {
-      console.error('Failed to mark tasks as batched:', err);
+      console.error('Failed to mark tasks as on-chain:', err);
     }
   };
 
@@ -175,22 +157,21 @@ export default function BatchChainPage() {
   const submitBatchToChain = () => {
     const tasksToSubmit = getSelectedTasksData();
     
-    // Convert tasks to BatchTaskInput format
-    // Database stores base_amount as actual USD1 value (e.g., 100 = 100 USD1)
-    const batchInputs: BatchTaskInput[] = tasksToSubmit.map(task => ({
+    // Convert tasks to RecordTaskInput format (no fund transfer, just recording)
+    const recordInputs: RecordTaskInput[] = tasksToSubmit.map(task => ({
       requesterDID: task.requester_did as `0x${string}`,
       providerDID: (task.provider_did || '0x0000000000000000000000000000000000000000000000000000000000000000') as `0x${string}`,
-      baseFee: task.base_amount || task.final_amount, // Already in USD1 units
-      complexity: task.complexity || 1,
+      amount: task.final_amount || task.base_amount || 0,
+      offchainId: task.id.toString(),
       metadata: JSON.stringify({
         title: task.title,
         description: task.description,
-        offchainId: task.id,
-        status: task.status
+        status: task.status,
+        created_at: task.created_at
       })
     }));
 
-    createTasksBatch(batchInputs);
+    recordTasksBatch(recordInputs);
   };
 
   const handleTriggerBatch = async () => {
@@ -199,36 +180,29 @@ export default function BatchChainPage() {
       return;
     }
 
+    if (!isAuthorized) {
+      setError('Only the arbitration wallet or contract owner can record tasks on-chain');
+      return;
+    }
+
     const tasksToSubmit = getSelectedTasksData();
     const limit = maxBatchSize ? Number(maxBatchSize) : 10;
     
     if (tasksToSubmit.length > limit) {
-      setError(`Cannot batch more than ${limit} tasks at once. Please select fewer tasks.`);
+      setError(`Cannot record more than ${limit} tasks at once. Please select fewer tasks.`);
       return;
     }
 
     if (tasksToSubmit.length === 0) {
-      setError('No tasks to batch');
-      return;
-    }
-
-    // Check if any task is missing provider DID
-    const tasksWithoutProvider = tasksToSubmit.filter(t => !t.provider_did);
-    if (tasksWithoutProvider.length > 0) {
-      setError(`${tasksWithoutProvider.length} task(s) have no provider assigned. Cannot batch.`);
+      setError('No tasks to record');
       return;
     }
 
     setError(null);
     setTriggering(true);
-    setApproving(true);
-    setStep('approve');
 
-    // Calculate total amount needed (database stores actual USD1 amount, not micro units)
-    const totalAmount = calculateTotalAmount();
-
-    // First approve the escrow contract to spend USD1 (add 50% buffer for dynamic pricing and fees)
-    approve(CONTRACT_ADDRESSES.Escrow as `0x${string}`, totalAmount * 1.5);
+    // Directly submit to chain - no approval needed since no funds are transferred
+    submitBatchToChain();
   };
 
   const handleSaveConfig = async () => {
@@ -281,8 +255,8 @@ export default function BatchChainPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold">Batch On-Chain</h1>
-            <p className="text-muted-foreground">Aggregate off-chain tasks to blockchain</p>
+            <h1 className="text-3xl font-bold">Record On-Chain</h1>
+            <p className="text-muted-foreground">Record completed tasks to blockchain for traceability</p>
           </div>
         </div>
         <Button variant="outline" onClick={loadData}>
@@ -311,7 +285,14 @@ export default function BatchChainPage() {
       {!isConnected && (
         <div className="flex items-center gap-2 rounded-lg bg-yellow-50 p-4 text-yellow-700 border border-yellow-200">
           <Wallet className="h-5 w-5" />
-          <span>Please connect your wallet to perform batch on-chain operations</span>
+          <span>Please connect your wallet to record tasks on-chain</span>
+        </div>
+      )}
+
+      {isConnected && !isAuthorized && (
+        <div className="flex items-center gap-2 rounded-lg bg-orange-50 p-4 text-orange-700 border border-orange-200">
+          <AlertCircle className="h-5 w-5" />
+          <span>Only the arbitration wallet or contract owner can record tasks. Current wallet: {address?.slice(0, 10)}...</span>
         </div>
       )}
 
@@ -373,13 +354,13 @@ export default function BatchChainPage() {
           <CardContent className="pt-6">
             <div className="flex items-center space-x-3">
               <div className="bg-indigo-100 p-2 rounded-lg">
-                <Wallet className="h-6 w-6 text-indigo-600" />
+                <FileText className="h-6 w-6 text-indigo-600" />
               </div>
               <div>
-                <p className="text-lg font-bold">
-                  {usd1Balance ? (Number(usd1Balance) / 1000000).toFixed(2) : '0.00'}
+                <p className="text-xs font-mono">
+                  {arbitrationWallet ? `${String(arbitrationWallet).slice(0, 10)}...` : 'Not Set'}
                 </p>
-                <p className="text-gray-500 text-sm">USD1 Balance</p>
+                <p className="text-gray-500 text-sm">Arbitration Wallet</p>
               </div>
             </div>
           </CardContent>
@@ -402,23 +383,18 @@ export default function BatchChainPage() {
                   </Button>
                   <Button 
                     onClick={handleTriggerBatch} 
-                    disabled={triggering || tasks.length === 0 || !isConnected || isApproving || isBatching}
+                    disabled={triggering || tasks.length === 0 || !isConnected || !isAuthorized || isBatching}
                     size="sm"
                   >
-                    {step === 'approve' && (isApproving || isApproveConfirming) ? (
+                    {isBatching || isBatchConfirming ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Approving USD1...
-                      </>
-                    ) : step === 'batch' && (isBatching || isBatchConfirming) ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Submitting to Chain...
+                        Recording to Chain...
                       </>
                     ) : (
                       <>
-                        <Play className="mr-2 h-4 w-4" />
-                        Batch On-Chain {selectedTasks.length > 0 ? `(${selectedTasks.length})` : '(All)'}
+                        <FileText className="mr-2 h-4 w-4" />
+                        Record On-Chain {selectedTasks.length > 0 ? `(${selectedTasks.length})` : '(All)'}
                       </>
                     )}
                   </Button>
@@ -544,32 +520,29 @@ export default function BatchChainPage() {
               </Button>
 
               <div className="border-t pt-4">
-                <h4 className="font-medium text-sm mb-2">How Batch On-Chain Works</h4>
+                <h4 className="font-medium text-sm mb-2">How Record On-Chain Works</h4>
                 <ul className="text-xs text-muted-foreground space-y-1">
-                  <li>• Tasks are created off-chain first</li>
-                  <li>• Select tasks to batch (max {maxBatchSize ? Number(maxBatchSize) : 10})</li>
-                  <li>• Step 1: Approve USD1 spending</li>
-                  <li>• Step 2: Submit batch to contract</li>
-                  <li>• Funds are locked in escrow on-chain</li>
-                  <li>• Reduces gas costs vs individual txs</li>
+                  <li>• Completed tasks are recorded on-chain</li>
+                  <li>• No fund transfer (already settled)</li>
+                  <li>• For traceability and auditing</li>
+                  <li>• Only arbitration wallet can record</li>
+                  <li>• Max {maxBatchSize ? Number(maxBatchSize) : 10} tasks per batch</li>
                 </ul>
               </div>
 
               {/* Transaction Info */}
-              {(approveHash || batchHash) && (
+              {batchHash && (
                 <div className="border-t pt-4">
-                  <h4 className="font-medium text-sm mb-2">Recent Transactions</h4>
-                  <div className="text-xs space-y-1">
-                    {approveHash && (
-                      <p className="text-muted-foreground">
-                        Approve: {approveHash.slice(0, 16)}...
-                      </p>
-                    )}
-                    {batchHash && (
-                      <p className="text-green-600">
-                        Batch: {batchHash.slice(0, 16)}...
-                      </p>
-                    )}
+                  <h4 className="font-medium text-sm mb-2">Recent Transaction</h4>
+                  <div className="text-xs">
+                    <a 
+                      href={`https://testnet.bscscan.com/tx/${batchHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-green-600 hover:underline"
+                    >
+                      {batchHash.slice(0, 20)}...
+                    </a>
                   </div>
                 </div>
               )}

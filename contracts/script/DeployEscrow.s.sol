@@ -39,6 +39,10 @@ contract DeployEscrowScript is Script {
         InsurancePool(insurancePool).setAuthorizedContract(address(escrow), true);
         console.log("Escrow authorized to use insurance pool");
 
+        // Set arbitration wallet (same as deployer for now)
+        escrow.setArbitrationWallet(deployer);
+        console.log("Arbitration wallet set to:", deployer);
+
         vm.stopBroadcast();
 
         console.log("\n=== Update your .env files with: ===");

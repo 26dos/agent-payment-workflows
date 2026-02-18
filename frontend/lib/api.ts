@@ -154,6 +154,8 @@ export const publicApi = {
 export const batchApi = {
   getPending: () => api.get<any>('/batch/pending'),
   trigger: (taskIds?: number[]) => api.post<any>('/batch/trigger', taskIds ? { task_ids: taskIds } : {}),
+  markOnChain: (taskIds: number[], txHash: string) => 
+    api.post<any>('/batch/mark-onchain', { task_ids: taskIds, tx_hash: txHash }),
   getConfig: () => api.get<any>('/batch/config'),
   updateConfig: (data: { task_count: number; interval_minutes: number; auto_enabled: boolean }) =>
     api.put('/batch/config', data),
