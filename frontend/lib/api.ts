@@ -169,6 +169,7 @@ export const taskApiV2 = {
     description: string;
     base_amount: number;
     complexity: number;
+    chain_tx_hash?: string;
   }) => api.post<any>('/tasks', data),
   accept: (id: number, providerDid: string) => api.put(`/tasks/${id}/accept`, { provider_did: providerDid }),
 };
