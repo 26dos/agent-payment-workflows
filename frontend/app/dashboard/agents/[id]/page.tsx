@@ -107,7 +107,7 @@ export default function AgentDetailPage() {
         if (updatedSubDIDs && updatedSubDIDs.length > 0) {
           const latestSubDID = updatedSubDIDs[updatedSubDIDs.length - 1];
           try {
-            await agentApi.update(Number(agentId), { sub_did: latestSubDID });
+            await agentApi.updateDID(Number(agentId), latestSubDID);
             setSuccess('Sub-DID created and bound successfully!');
             fetchAgent();
           } catch (err) {

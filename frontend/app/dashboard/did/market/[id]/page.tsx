@@ -220,7 +220,7 @@ export default function AuctionDetailPage() {
   
   useEffect(() => {
     if (chainAuctionData) {
-      const [, auctionStruct] = chainAuctionData as [bigint, { endTime: bigint }];
+      const [, auctionStruct] = chainAuctionData as unknown as [bigint, { endTime: bigint }];
       if (auctionStruct && auctionStruct.endTime) {
         setChainEndTime(Number(auctionStruct.endTime) * 1000);
       }
@@ -608,7 +608,7 @@ export default function AuctionDetailPage() {
                     </p>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">USD1 Allowance</span>
-                      <span className={allowance && BigInt(allowance.toString()) > 0n ? 'text-green-600' : 'text-amber-600'}>
+                      <span className={allowance && BigInt(allowance.toString()) > BigInt(0) ? 'text-green-600' : 'text-amber-600'}>
                         {allowance ? `$${(Number(allowance) / 1e6).toLocaleString()}` : '$0'}
                       </span>
                     </div>

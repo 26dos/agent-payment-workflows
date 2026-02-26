@@ -62,7 +62,7 @@ export default function DIDPage() {
   
   // Check if there's an existing auction for this display ID
   const { data: existingAuction } = useAuctionByDisplayId(isPremiumLength ? displayId : undefined);
-  const hasExistingAuction = existingAuction && (existingAuction as any)[0] && BigInt((existingAuction as any)[0]) > 0n;
+  const hasExistingAuction = existingAuction && (existingAuction as any)[0] && BigInt((existingAuction as any)[0]) > BigInt(0);
   
   // On-chain DID registration via DualDIDRegistry contract
   const { 

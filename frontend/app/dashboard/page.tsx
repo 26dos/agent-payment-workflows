@@ -131,6 +131,8 @@ export default function DashboardPage() {
         disputed_tasks: disputedTasks,
         total_volume: totalVolume,
         total_agents: agentDIDs ? (agentDIDs as `0x${string}`[]).length : 0,
+        average_task_cost: loadedTasks.length > 0 ? totalVolume / loadedTasks.length : 0,
+        success_rate: loadedTasks.length > 0 ? (completedTasks / loadedTasks.length) * 100 : 0,
       });
     } catch (error) {
       console.error('Failed to load tasks from chain:', error);

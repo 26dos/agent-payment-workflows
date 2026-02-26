@@ -102,7 +102,7 @@ export default function ReputationPage() {
       }) as bigint;
 
       if (taskCount === BigInt(0)) {
-        setDashboardStats({ total_tasks: 0, completed_tasks: 0, active_tasks: 0, disputed_tasks: 0, total_volume: 0, total_agents: 0 });
+        setDashboardStats({ total_tasks: 0, completed_tasks: 0, active_tasks: 0, disputed_tasks: 0, total_volume: 0, total_agents: 0, average_task_cost: 0, success_rate: 0 });
         return;
       }
 
@@ -138,6 +138,8 @@ export default function ReputationPage() {
         disputed_tasks: disputedTasks,
         total_volume: 0,
         total_agents: (agentDIDs as `0x${string}`[]).length,
+        average_task_cost: 0,
+        success_rate: totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0,
       });
     } catch (error) {
       console.error('Failed to load task stats:', error);
