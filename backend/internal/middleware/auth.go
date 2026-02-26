@@ -16,7 +16,9 @@ import (
 
 // Claims represents JWT claims
 type Claims struct {
-	WalletAddress string `json:"wallet_address"`
+	WalletAddress string `json:"wallet_address,omitempty"`
+	Email         string `json:"email,omitempty"`
+	AuthType      string `json:"auth_type"` // "wallet" or "email"
 	jwt.RegisteredClaims
 }
 
@@ -46,13 +48,24 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 		})
 
 		if err != nil || !token.Valid {
+			fmt.Printf("[AUTH] Token validation failed: %v\n", err)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 			c.Abort()
 			return
 		}
 
-		// Set wallet address in context
-		c.Set("wallet_address", claims.WalletAddress)
+		// Debug log
+		fmt.Printf("[AUTH] Token valid - AuthType: %s, Email: %s, WalletAddress: %s\n", 
+			claims.AuthType, claims.Email, claims.WalletAddress)
+
+		// Set auth info in context based on auth type
+		c.Set("auth_type", claims.AuthType)
+		if claims.WalletAddress != "" {
+			c.Set("wallet_address", claims.WalletAddress)
+		}
+		if claims.Email != "" {
+			c.Set("email", claims.Email)
+		}
 		c.Next()
 	}
 }
@@ -61,6 +74,23 @@ func AuthMiddleware(jwtSecret string) gin.HandlerFunc {
 func GenerateToken(walletAddress string, jwtSecret string) (string, error) {
 	claims := &Claims{
 		WalletAddress: strings.ToLower(walletAddress),
+		AuthType:      "wallet",
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			Issuer:    "clawpay",
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtSecret))
+}
+
+// GenerateTokenForEmail creates a new JWT token for an email user
+func GenerateTokenForEmail(email string, jwtSecret string) (string, error) {
+	claims := &Claims{
+		Email:    strings.ToLower(email),
+		AuthType: "email",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -130,4 +160,37 @@ func GetWalletAddress(c *gin.Context) string {
 		return ""
 	}
 	return addr.(string)
+}
+
+// GetEmail retrieves email from gin context
+func GetEmail(c *gin.Context) string {
+	email, exists := c.Get("email")
+	if !exists {
+		return ""
+	}
+	return email.(string)
+}
+
+// GetAuthType retrieves auth type from gin context
+func GetAuthType(c *gin.Context) string {
+	authType, exists := c.Get("auth_type")
+	if !exists {
+		return ""
+	}
+	return authType.(string)
+}
+
+// RequireWallet middleware ensures user has a wallet connected
+func RequireWallet(c *gin.Context) {
+	walletAddress := GetWalletAddress(c)
+	if walletAddress == "" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error":   "Wallet required for this operation",
+			"code":    "WALLET_REQUIRED",
+			"message": "Please connect a wallet to perform business operations",
+		})
+		c.Abort()
+		return
+	}
+	c.Next()
 }

@@ -2,12 +2,17 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"fmt"
 	"math"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/clawpay/backend/internal/model"
 	"github.com/clawpay/backend/internal/repository"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type Service struct {
@@ -30,9 +35,10 @@ func (s *Service) GetOrCreateUser(ctx context.Context, walletAddress string) (*m
 		return user, nil
 	}
 
-	// Create new user
+	// Create new user with wallet
 	user = &model.User{
-		WalletAddress: walletAddress,
+		WalletAddress: &walletAddress,
+		AuthType:      model.AuthTypeWallet,
 		HumanScore:    75, // Initial score
 		Metadata:      "{}",
 	}
@@ -48,13 +54,207 @@ func (s *Service) GetUserByWallet(ctx context.Context, walletAddress string) (*m
 	return s.repo.GetUserByWallet(ctx, walletAddress)
 }
 
+func (s *Service) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	return s.repo.GetUserByEmail(ctx, email)
+}
+
 func (s *Service) UpdateUserDID(ctx context.Context, walletAddress, did string) error {
 	return s.repo.UpdateUserDID(ctx, walletAddress, did)
+}
+
+// ============ Email Auth Service ============
+
+// CreateVerificationCode creates and stores a verification code for email
+func (s *Service) CreateVerificationCode(ctx context.Context, email, codeType string) (string, error) {
+	// Generate 6-digit code
+	code, err := generateVerificationCode(6)
+	if err != nil {
+		return "", err
+	}
+
+	verification := &model.EmailVerificationCode{
+		Email:     email,
+		Code:      code,
+		Type:      codeType,
+		ExpiresAt: time.Now().Add(10 * time.Minute), // Code expires in 10 minutes
+	}
+
+	if err := s.repo.CreateVerificationCode(ctx, verification); err != nil {
+		return "", err
+	}
+
+	return code, nil
+}
+
+// VerifyCode verifies a verification code
+func (s *Service) VerifyCode(ctx context.Context, email, code, codeType string) (bool, error) {
+	verification, err := s.repo.GetVerificationCode(ctx, email, code, codeType)
+	if err != nil {
+		return false, err
+	}
+
+	if verification == nil {
+		return false, nil
+	}
+
+	if verification.Used {
+		return false, nil
+	}
+
+	if verification.IsExpired() {
+		return false, nil
+	}
+
+	// Mark code as used
+	if err := s.repo.MarkVerificationCodeUsed(ctx, verification.ID); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// CreateEmailUser creates a new user with email authentication
+func (s *Service) CreateEmailUser(ctx context.Context, email, password, displayID string) (*model.User, error) {
+	// Hash password
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	passwordHashStr := string(passwordHash)
+
+	// Generate DID for the user
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(email+time.Now().String())))
+
+	user := &model.User{
+		Email:         &email,
+		PasswordHash:  &passwordHashStr,
+		AuthType:      model.AuthTypeEmail,
+		EmailVerified: true, // Verified via code
+		DID:           didHash,
+		HumanScore:    60, // Lower initial score for email users
+		Metadata:      "{}",
+	}
+
+	// Set display ID if provided
+	if displayID != "" {
+		// Validate display ID format
+		valid, _, reason := s.ValidateDisplayID(ctx, displayID)
+		if !valid {
+			return nil, fmt.Errorf("invalid display ID: %s", reason)
+		}
+		user.DisplayID = &displayID
+	}
+
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	return user, nil
+}
+
+// ValidateEmailLogin validates email/password login
+func (s *Service) ValidateEmailLogin(ctx context.Context, email, password string) (*model.User, error) {
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	if user.PasswordHash == nil {
+		return nil, fmt.Errorf("password not set")
+	}
+
+	// Compare password
+	if err := bcrypt.CompareHashAndPassword([]byte(*user.PasswordHash), []byte(password)); err != nil {
+		return nil, fmt.Errorf("invalid password")
+	}
+
+	return user, nil
+}
+
+// BindWalletToUser binds a wallet address to an email-registered user
+func (s *Service) BindWalletToUser(ctx context.Context, email, walletAddress string) (*model.User, error) {
+	// Get user by email
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	// Check if wallet is already bound to another user
+	existingUser, _ := s.repo.GetUserByWallet(ctx, walletAddress)
+	if existingUser != nil && existingUser.ID != user.ID {
+		return nil, fmt.Errorf("wallet already bound to another account")
+	}
+
+	// Update user's wallet address
+	user.WalletAddress = &walletAddress
+
+	if err := s.repo.UpdateUserWallet(ctx, user.ID, walletAddress); err != nil {
+		return nil, err
+	}
+
+	// If user has a Display ID, create On-Chain DID and link them
+	if user.DisplayID != nil && *user.DisplayID != "" {
+		// Create On-Chain DID
+		onChainDID, err := s.RegisterOnChainDID(ctx, walletAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create on-chain DID: %w", err)
+		}
+
+		// Link Off-Chain DID to On-Chain DID
+		offChainDID, err := s.repo.GetOffChainDIDByDisplayID(ctx, *user.DisplayID)
+		if err == nil && offChainDID != nil {
+			offChainDID.CurrentOwnerOnChainID = &onChainDID.DIDHash
+			if err := s.repo.UpdateOffChainDID(ctx, offChainDID); err != nil {
+				return nil, fmt.Errorf("failed to link DIDs: %w", err)
+			}
+
+			// Also update on-chain DID to link back
+			onChainDID.LinkedOffChainID = &offChainDID.DIDHash
+			if err := s.repo.UpdateOnChainDID(ctx, onChainDID); err != nil {
+				return nil, fmt.Errorf("failed to update on-chain DID: %w", err)
+			}
+		}
+	}
+
+	return user, nil
+}
+
+// generateVerificationCode generates a random numeric code
+func generateVerificationCode(length int) (string, error) {
+	const digits = "0123456789"
+	result := make([]byte, length)
+
+	for i := 0; i < length; i++ {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
+		if err != nil {
+			return "", err
+		}
+		result[i] = digits[num.Int64()]
+	}
+
+	return string(result), nil
 }
 
 // ============ Agent Service ============
 
 func (s *Service) CreateAgent(ctx context.Context, userID int64, name string) (*model.Agent, error) {
+	exists, err := s.repo.AgentNameExists(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check agent name: %w", err)
+	}
+	if exists {
+		return nil, fmt.Errorf("agent with name '%s' already exists", name)
+	}
+
 	agent := &model.Agent{
 		UserID:     userID,
 		Name:       name,
@@ -110,8 +310,8 @@ func (s *Service) AcceptTask(ctx context.Context, taskID int64) error {
 	return s.repo.UpdateTaskAccepted(ctx, taskID)
 }
 
-func (s *Service) AcceptTaskWithProvider(ctx context.Context, taskID int64, providerDID string) error {
-	return s.repo.UpdateTaskProvider(ctx, taskID, providerDID)
+func (s *Service) AcceptTaskWithProvider(ctx context.Context, taskID int64, providerDID string, txHash string) error {
+	return s.repo.UpdateTaskProvider(ctx, taskID, providerDID, txHash)
 }
 
 func (s *Service) CompleteTask(ctx context.Context, taskID int64) error {
@@ -438,4 +638,974 @@ func (s *Service) RunAutoArbitration(ctx context.Context) ([]AutoArbitrationResu
 // GetTasksByStatus returns tasks with a specific status
 func (s *Service) GetTasksByStatus(ctx context.Context, status model.TaskStatus) ([]*model.Task, error) {
 	return s.repo.GetTasksByStatus(ctx, status)
+}
+
+// ============ Incentive System Service ============
+
+// GetHumanIncentive returns incentive data for a human DID
+func (s *Service) GetHumanIncentive(ctx context.Context, humanDID string) (*model.HumanIncentive, error) {
+	return s.repo.GetHumanIncentive(ctx, humanDID)
+}
+
+// GetAgentIncentive returns incentive data for an agent DID
+func (s *Service) GetAgentIncentive(ctx context.Context, agentDID string) (*model.AgentIncentive, error) {
+	return s.repo.GetAgentIncentive(ctx, agentDID)
+}
+
+// GetIncentiveSummary returns a summary of all incentives for a human DID
+func (s *Service) GetIncentiveSummary(ctx context.Context, humanDID string) (*model.IncentiveSummary, error) {
+	human, err := s.repo.GetHumanIncentive(ctx, humanDID)
+	if err != nil {
+		return nil, err
+	}
+
+	agents, err := s.repo.GetAgentIncentivesByHuman(ctx, humanDID)
+	if err != nil {
+		return nil, err
+	}
+
+	var humanPoints int64 = 0
+	var totalAgentPoints int64 = 0
+	var kycLevel model.KYCLevel = 0
+	var inviteCount int = 0
+	var blacklisted bool = false
+
+	if human != nil {
+		humanPoints = human.TotalPoints
+		kycLevel = human.KYCLevel
+		inviteCount = human.InviteCount
+		blacklisted = human.Blacklisted
+	}
+
+	agentIncentives := make([]model.AgentIncentive, len(agents))
+	for i, a := range agents {
+		agentIncentives[i] = *a
+		totalAgentPoints += a.TotalPoints
+	}
+
+	return &model.IncentiveSummary{
+		HumanDID:         humanDID,
+		HumanPoints:      humanPoints,
+		TotalAgentPoints: totalAgentPoints,
+		TotalPoints:      humanPoints + totalAgentPoints,
+		KYCLevel:         kycLevel,
+		InviteCount:      inviteCount,
+		Blacklisted:      blacklisted,
+		Agents:           agentIncentives,
+	}, nil
+}
+
+// ClaimHumanRegistrationBonus claims the registration bonus for a human DID
+func (s *Service) ClaimHumanRegistrationBonus(ctx context.Context, humanDID string, inviteCode *string) (*model.HumanIncentive, error) {
+	constants := model.GetDefaultIncentiveConstants()
+
+	// Check if already registered
+	existing, err := s.repo.GetHumanIncentive(ctx, humanDID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.Registered {
+		return existing, fmt.Errorf("already registered")
+	}
+
+	incentive := &model.HumanIncentive{
+		HumanDID:           humanDID,
+		RegistrationPoints: constants.HumanRegistrationPoints,
+		TotalPoints:        constants.HumanRegistrationPoints,
+		Registered:         true,
+	}
+
+	// Handle referral
+	if inviteCode != nil && *inviteCode != "" {
+		inviter, err := s.repo.GetHumanIncentiveByInviteCode(ctx, *inviteCode)
+		if err == nil && inviter != nil && !inviter.Blacklisted {
+			incentive.InvitedBy = &inviter.HumanDID
+			incentive.TotalPoints += constants.HumanReferralInviteePoints
+
+			// Update inviter
+			inviter.ReferralPoints += constants.HumanReferralInviterPoints
+			inviter.TotalPoints += constants.HumanReferralInviterPoints
+			inviter.InviteCount++
+			s.repo.UpdateHumanIncentive(ctx, inviter)
+
+			// Record referral
+			s.repo.CreateReferralRecord(ctx, &model.ReferralRecord{
+				InviterDID: inviter.HumanDID,
+				InviteeDID: humanDID,
+				InviteCode: *inviteCode,
+			})
+		}
+	}
+
+	if existing != nil {
+		incentive.ID = existing.ID
+		if err := s.repo.UpdateHumanIncentive(ctx, incentive); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.repo.CreateHumanIncentive(ctx, incentive); err != nil {
+			return nil, err
+		}
+	}
+
+	return incentive, nil
+}
+
+// ClaimAgentRegistrationBonus claims the registration bonus for an agent DID
+func (s *Service) ClaimAgentRegistrationBonus(ctx context.Context, agentDID, humanDID string) (*model.AgentIncentive, error) {
+	constants := model.GetDefaultIncentiveConstants()
+
+	// Check if already registered
+	existing, err := s.repo.GetAgentIncentive(ctx, agentDID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.Registered {
+		return existing, fmt.Errorf("already registered")
+	}
+
+	incentive := &model.AgentIncentive{
+		AgentDID:           agentDID,
+		HumanDID:           humanDID,
+		RegistrationPoints: constants.AgentRegistrationPoints,
+		TotalPoints:        constants.AgentRegistrationPoints,
+		Registered:         true,
+	}
+
+	if existing != nil {
+		incentive.ID = existing.ID
+		if err := s.repo.UpdateAgentIncentive(ctx, incentive); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := s.repo.CreateAgentIncentive(ctx, incentive); err != nil {
+			return nil, err
+		}
+	}
+
+	return incentive, nil
+}
+
+// GenerateInviteCode generates an invite code for a human DID
+func (s *Service) GenerateInviteCode(ctx context.Context, humanDID string) (string, error) {
+	incentive, err := s.repo.GetHumanIncentive(ctx, humanDID)
+	if err != nil {
+		return "", err
+	}
+	if incentive == nil || !incentive.Registered {
+		return "", fmt.Errorf("must be registered to generate invite code")
+	}
+	if incentive.Blacklisted {
+		return "", fmt.Errorf("blacklisted accounts cannot generate invite codes")
+	}
+
+	// Generate unique code
+	code := fmt.Sprintf("0x%x%d", humanDID[:16], time.Now().UnixNano())
+
+	incentive.InviteCode = &code
+	if err := s.repo.UpdateHumanIncentive(ctx, incentive); err != nil {
+		return "", err
+	}
+
+	return code, nil
+}
+
+// RecordTaskCompletion records a task completion for incentive points
+func (s *Service) RecordTaskCompletion(ctx context.Context, agentDID string, taskID int64) (*model.AgentIncentive, error) {
+	constants := model.GetDefaultIncentiveConstants()
+
+	incentive, err := s.repo.GetAgentIncentive(ctx, agentDID)
+	if err != nil {
+		return nil, err
+	}
+	if incentive == nil {
+		return nil, fmt.Errorf("agent not registered in incentive system")
+	}
+
+	// Check max total points
+	if incentive.TaskPoints >= constants.MaxTotalAgentTaskPoints {
+		return incentive, nil // Already at max
+	}
+
+	// Check daily limit
+	today := time.Now().Format("2006-01-02")
+	if incentive.LastTaskDay != nil && *incentive.LastTaskDay == today {
+		if incentive.DailyTaskPoints >= constants.MaxDailyTaskPoints {
+			return incentive, nil // Daily limit reached
+		}
+	} else {
+		// New day, reset daily counter
+		incentive.DailyTaskPoints = 0
+		incentive.LastTaskDay = &today
+	}
+
+	// Add points
+	pointsToAdd := constants.TaskCompletionPoints
+	if incentive.TaskPoints+pointsToAdd > constants.MaxTotalAgentTaskPoints {
+		pointsToAdd = constants.MaxTotalAgentTaskPoints - incentive.TaskPoints
+	}
+
+	incentive.TaskPoints += pointsToAdd
+	incentive.TotalPoints += pointsToAdd
+	incentive.DailyTaskPoints++
+
+	if err := s.repo.UpdateAgentIncentive(ctx, incentive); err != nil {
+		return nil, err
+	}
+
+	return incentive, nil
+}
+
+// GetReferralLeaderboard returns top referrers
+func (s *Service) GetReferralLeaderboard(ctx context.Context, limit int) ([]*model.HumanIncentive, error) {
+	return s.repo.GetTopReferrers(ctx, limit)
+}
+
+// GetPointsLeaderboard returns top point earners
+func (s *Service) GetPointsLeaderboard(ctx context.Context, limit int, includeAgents bool) (interface{}, error) {
+	if includeAgents {
+		return s.repo.GetTopAgentPoints(ctx, limit)
+	}
+	return s.repo.GetTopHumanPoints(ctx, limit)
+}
+
+// ============ Task Specification Service ============
+
+// CreateTaskSpecification creates a task specification
+func (s *Service) CreateTaskSpecification(ctx context.Context, spec *model.TaskSpecification) error {
+	return s.repo.CreateTaskSpecification(ctx, spec)
+}
+
+// GetTaskSpecification returns the specification for a task
+func (s *Service) GetTaskSpecification(ctx context.Context, taskID int64) (*model.TaskSpecification, error) {
+	return s.repo.GetTaskSpecification(ctx, taskID)
+}
+
+// SubmitTaskResult submits a result for a task
+func (s *Service) SubmitTaskResult(ctx context.Context, result *model.TaskResult) error {
+	return s.repo.CreateTaskResult(ctx, result)
+}
+
+// GetTaskResult returns the result for a task
+func (s *Service) GetTaskResult(ctx context.Context, taskID int64) (*model.TaskResult, error) {
+	return s.repo.GetTaskResult(ctx, taskID)
+}
+
+// ValidateProvider validates if a provider meets task requirements
+func (s *Service) ValidateProvider(ctx context.Context, taskID int64, providerDID string) (bool, string, error) {
+	spec, err := s.repo.GetTaskSpecification(ctx, taskID)
+	if err != nil {
+		return false, "", err
+	}
+	if spec == nil {
+		return true, "", nil // No specification, all providers accepted
+	}
+
+	// Check reputation score
+	// In production, this would query the on-chain ReputationScore contract
+	// For now, we use a default score or look up in the agents table
+	agentScore := 60 // Default
+
+	if agentScore < spec.MinReputationScore {
+		return false, fmt.Sprintf("reputation score %d below minimum %d", agentScore, spec.MinReputationScore), nil
+	}
+
+	// Check KYC if required
+	if spec.RequiresKYC {
+		agentIncentive, _ := s.repo.GetAgentIncentive(ctx, providerDID)
+		if agentIncentive == nil {
+			return false, "agent not registered in incentive system", nil
+		}
+		humanIncentive, _ := s.repo.GetHumanIncentive(ctx, agentIncentive.HumanDID)
+		if humanIncentive == nil || humanIncentive.KYCLevel < spec.MinKYCLevel {
+			return false, fmt.Sprintf("KYC level insufficient (need level %d)", spec.MinKYCLevel), nil
+		}
+	}
+
+	// Check acceptance deadline
+	if time.Now().After(spec.AcceptanceDeadline) {
+		return false, "acceptance period ended", nil
+	}
+
+	return true, "", nil
+}
+
+// ============ Dual DID System Service ============
+
+// RegisterOnChainDID registers an on-chain DID for a wallet
+func (s *Service) RegisterOnChainDID(ctx context.Context, walletAddress string) (*model.OnChainDID, error) {
+	return s.RegisterOnChainDIDWithHash(ctx, walletAddress, "")
+}
+
+// RegisterOnChainDIDWithHash registers an on-chain DID with an optional pre-computed hash
+func (s *Service) RegisterOnChainDIDWithHash(ctx context.Context, walletAddress, didHash string) (*model.OnChainDID, error) {
+	// Check if already registered
+	existing, err := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		// Update with new hash if provided and different
+		if didHash != "" && existing.DIDHash != didHash {
+			existing.DIDHash = didHash
+			if err := s.repo.UpdateOnChainDID(ctx, existing); err != nil {
+				return nil, err
+			}
+		}
+		return existing, nil // Already registered
+	}
+
+	// Generate DID hash if not provided
+	if didHash == "" {
+		didHash = fmt.Sprintf("0x%x", sha256.Sum256([]byte(walletAddress+time.Now().String())))
+	}
+
+	onChainDID := &model.OnChainDID{
+		DIDHash:       didHash,
+		WalletAddress: walletAddress,
+		Active:        true,
+		CreatedAt:     time.Now(),
+	}
+
+	if err := s.repo.CreateOnChainDID(ctx, onChainDID); err != nil {
+		return nil, err
+	}
+
+	return onChainDID, nil
+}
+
+// RegisterOffChainDID registers an off-chain display DID
+func (s *Service) RegisterOffChainDID(ctx context.Context, walletAddress, displayID string) (*model.OffChainDID, error) {
+	// Check if user already has a display ID
+	user, err := s.repo.GetUserByWallet(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+	if user != nil && user.DisplayID != nil && *user.DisplayID != "" {
+		return nil, fmt.Errorf("user already has a Human DID: %s", *user.DisplayID)
+	}
+
+	// Get on-chain DID
+	onChainDID, err := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+	if onChainDID == nil {
+		return nil, fmt.Errorf("no on-chain DID found, please register first")
+	}
+	if onChainDID.LinkedOffChainID != nil {
+		return nil, fmt.Errorf("already has an off-chain DID linked")
+	}
+
+	// Validate display ID format
+	valid, _, reason := s.ValidateDisplayID(ctx, displayID)
+	if !valid {
+		return nil, fmt.Errorf(reason)
+	}
+
+	// Generate DID hash
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
+
+	offChainDID := &model.OffChainDID{
+		DisplayID:             displayID,
+		DIDHash:               didHash,
+		Tier:                  model.DIDTierNormal,
+		IsSystemGenerated:     false,
+		CurrentOwnerOnChainID: &onChainDID.DIDHash,
+		Active:                true,
+		CreatedAt:             time.Now(),
+		UpdatedAt:             time.Now(),
+	}
+
+	if err := s.repo.CreateOffChainDID(ctx, offChainDID); err != nil {
+		return nil, err
+	}
+
+	// Link to on-chain DID
+	onChainDID.LinkedOffChainID = &offChainDID.DIDHash
+	if err := s.repo.UpdateOnChainDID(ctx, onChainDID); err != nil {
+		return nil, err
+	}
+
+	// Update user's display_id to enforce one DID per user
+	if user != nil {
+		if err := s.repo.UpdateUserDisplayID(ctx, user.ID, displayID); err != nil {
+			return nil, fmt.Errorf("failed to update user display ID: %w", err)
+		}
+	}
+
+	return offChainDID, nil
+}
+
+// CompleteRegistration registers both on-chain and off-chain DIDs
+func (s *Service) CompleteRegistration(ctx context.Context, walletAddress, displayID string) (*model.UserDIDInfo, error) {
+	// Register on-chain DID
+	onChainDID, err := s.RegisterOnChainDID(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register off-chain DID
+	offChainDID, err := s.RegisterOffChainDID(ctx, walletAddress, displayID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.UserDIDInfo{
+		OnChainDID:  onChainDID,
+		OffChainDID: offChainDID,
+		HasOnChain:  true,
+		HasOffChain: true,
+	}, nil
+}
+
+// GetUserDIDInfo returns the DID info for a user
+func (s *Service) GetUserDIDInfo(ctx context.Context, walletAddress string) (*model.UserDIDInfo, error) {
+	info := &model.UserDIDInfo{}
+
+	onChainDID, err := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+
+	if onChainDID != nil {
+		info.OnChainDID = onChainDID
+		info.HasOnChain = true
+
+		if onChainDID.LinkedOffChainID != nil {
+			offChainDID, err := s.repo.GetOffChainDIDByHash(ctx, *onChainDID.LinkedOffChainID)
+			if err != nil {
+				return nil, err
+			}
+			if offChainDID != nil {
+				info.OffChainDID = offChainDID
+				info.HasOffChain = true
+			}
+		}
+	}
+
+	return info, nil
+}
+
+// GetUserDIDInfoByEmail returns DID info for an email user
+func (s *Service) GetUserDIDInfoByEmail(ctx context.Context, email string) (*model.UserDIDInfo, error) {
+	info := &model.UserDIDInfo{}
+
+	// Get user by email
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil || user == nil {
+		return info, nil
+	}
+
+	// Check if user has a wallet and thus on-chain DID
+	if user.WalletAddress != nil && *user.WalletAddress != "" {
+		onChainDID, err := s.repo.GetOnChainDIDByWallet(ctx, *user.WalletAddress)
+		if err == nil && onChainDID != nil {
+			info.OnChainDID = onChainDID
+			info.HasOnChain = true
+		}
+	}
+
+	// Check if user has display_id set
+	if user.DisplayID != nil && *user.DisplayID != "" {
+		offChainDID, err := s.repo.GetOffChainDIDByDisplayID(ctx, *user.DisplayID)
+		if err == nil && offChainDID != nil {
+			info.OffChainDID = offChainDID
+			info.HasOffChain = true
+		}
+	}
+
+	return info, nil
+}
+
+// RegisterOffChainDIDByEmail registers an off-chain DID for an email user
+func (s *Service) RegisterOffChainDIDByEmail(ctx context.Context, email, displayID string) (*model.OffChainDID, error) {
+	// Get user
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil || user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+
+	// Check if user already has a display ID (one Human DID per user)
+	if user.DisplayID != nil && *user.DisplayID != "" {
+		return nil, fmt.Errorf("user already has a Human DID: %s", *user.DisplayID)
+	}
+
+	// Validate display ID format
+	valid, _, reason := s.ValidateDisplayID(ctx, displayID)
+	if !valid {
+		return nil, fmt.Errorf(reason)
+	}
+
+	// Generate DID hash
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
+
+	// Create off-chain DID
+	offChainDID := &model.OffChainDID{
+		DisplayID:             displayID,
+		DIDHash:               didHash,
+		Tier:                  model.DIDTierNormal,
+		IsSystemGenerated:     false,
+		Active:                true,
+	}
+
+	if err := s.repo.CreateOffChainDID(ctx, offChainDID); err != nil {
+		return nil, fmt.Errorf("failed to create off-chain DID: %w", err)
+	}
+
+	// Update user's display_id
+	if err := s.repo.UpdateUserDisplayID(ctx, user.ID, displayID); err != nil {
+		return nil, fmt.Errorf("failed to update user display ID: %w", err)
+	}
+
+	return offChainDID, nil
+}
+
+// ValidateDisplayID validates a display ID format and availability
+func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool, bool, string) {
+	// New rules: alphanumeric only, 1-32 characters
+	// 5+ chars = free registration, 1-4 chars = auction
+	
+	// Check length
+	if len(displayID) == 0 {
+		return false, false, "Display ID cannot be empty"
+	}
+	if len(displayID) > 32 {
+		return false, false, "Display ID must be 32 characters or less"
+	}
+
+	// Convert to uppercase for validation
+	upperDisplayID := strings.ToUpper(displayID)
+
+	// Validate characters: only A-Z and 0-9 allowed
+	for _, c := range upperDisplayID {
+		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+			return false, false, "Display ID can only contain letters (A-Z) and digits (0-9)"
+		}
+	}
+
+	// Check availability
+	existing, _ := s.repo.GetOffChainDIDByDisplayID(ctx, upperDisplayID)
+	if existing != nil {
+		return true, false, "Display ID is already taken"
+	}
+
+	// Check blocked list
+	blocked, _ := s.repo.IsDisplayIDBlocked(ctx, upperDisplayID)
+	if blocked {
+		return false, false, "Display ID is blocked"
+	}
+
+	return true, true, ""
+}
+
+// GetOffChainDIDByDisplayID returns an off-chain DID by display ID
+func (s *Service) GetOffChainDIDByDisplayID(ctx context.Context, displayID string) (*model.OffChainDID, error) {
+	return s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+}
+
+// ============ DID Transfer Service ============
+
+// ListDIDForTransfer lists a DID for transfer
+func (s *Service) ListDIDForTransfer(ctx context.Context, walletAddress, displayID string, price float64, paymentToken string) (*model.DIDTransferListing, error) {
+	// Get off-chain DID
+	offChainDID, err := s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+	if err != nil {
+		return nil, err
+	}
+	if offChainDID == nil {
+		return nil, fmt.Errorf("off-chain DID not found")
+	}
+
+	// Verify ownership
+	onChainDID, err := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+	if onChainDID == nil || offChainDID.CurrentOwnerOnChainID == nil || *offChainDID.CurrentOwnerOnChainID != onChainDID.DIDHash {
+		return nil, fmt.Errorf("not the owner of this DID")
+	}
+
+	// Check if already listed
+	existing, _ := s.repo.GetActiveListingByDIDHash(ctx, offChainDID.DIDHash)
+	if existing != nil {
+		return nil, fmt.Errorf("DID is already listed for transfer")
+	}
+
+	listing := &model.DIDTransferListing{
+		OffChainDIDHash: offChainDID.DIDHash,
+		SellerWallet:    walletAddress,
+		Price:           price,
+		PaymentToken:    paymentToken,
+		Active:          true,
+		ListedAt:        time.Now(),
+	}
+
+	if err := s.repo.CreateDIDTransferListing(ctx, listing); err != nil {
+		return nil, err
+	}
+
+	return listing, nil
+}
+
+// CancelDIDTransferListing cancels a DID transfer listing
+func (s *Service) CancelDIDTransferListing(ctx context.Context, walletAddress, displayID string) error {
+	offChainDID, err := s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+	if err != nil {
+		return err
+	}
+	if offChainDID == nil {
+		return fmt.Errorf("off-chain DID not found")
+	}
+
+	listing, err := s.repo.GetActiveListingByDIDHash(ctx, offChainDID.DIDHash)
+	if err != nil {
+		return err
+	}
+	if listing == nil {
+		return fmt.Errorf("no active listing found")
+	}
+	if listing.SellerWallet != walletAddress {
+		return fmt.Errorf("not the seller")
+	}
+
+	listing.Active = false
+	return s.repo.UpdateDIDTransferListing(ctx, listing)
+}
+
+// GetDIDTransferListings returns active transfer listings
+func (s *Service) GetDIDTransferListings(ctx context.Context, page, pageSize int) ([]*model.DIDTransferListing, int, error) {
+	return s.repo.GetActiveListings(ctx, page, pageSize)
+}
+
+// ============ Premium DID Auction Service ============
+
+// GetActiveAuctions returns premium DID auctions (supports status filter)
+func (s *Service) GetActiveAuctions(ctx context.Context, page, pageSize int, tier, auctionType, status string) (*model.AuctionListResponse, error) {
+	return s.repo.GetActiveAuctions(ctx, page, pageSize, tier, auctionType, status)
+}
+
+// GetAuction returns a specific auction
+func (s *Service) GetAuction(ctx context.Context, auctionID int64) (*model.PremiumDIDAuction, error) {
+	return s.repo.GetAuction(ctx, auctionID)
+}
+
+// GetAuctionBids returns bids for an auction
+func (s *Service) GetAuctionBids(ctx context.Context, auctionID int64) ([]*model.AuctionBid, error) {
+	return s.repo.GetAuctionBids(ctx, auctionID)
+}
+
+// RecordBid records a bid for an auction
+func (s *Service) RecordBid(ctx context.Context, auctionID int64, bidderWallet string, amount float64, txHash string, newEndTime *int64) (*model.AuctionBid, error) {
+	auction, err := s.repo.GetAuction(ctx, auctionID)
+	if err != nil {
+		return nil, err
+	}
+	if auction == nil {
+		return nil, fmt.Errorf("auction not found")
+	}
+	if auction.Status != model.AuctionStatusActive {
+		return nil, fmt.Errorf("auction is not active")
+	}
+
+	bid := &model.AuctionBid{
+		AuctionID:    auctionID,
+		BidderWallet: bidderWallet,
+		Amount:       amount,
+		TxHash:       txHash,
+		CreatedAt:    time.Now(),
+	}
+
+	if err := s.repo.CreateAuctionBid(ctx, bid); err != nil {
+		return nil, err
+	}
+
+	// Update auction
+	auction.CurrentPrice = amount
+	auction.HighestBidder = &bidderWallet
+	auction.BidCount++
+	auction.UpdatedAt = time.Now()
+
+	// Update end time if provided (from chain event)
+	if newEndTime != nil {
+		auction.EndTime = time.Unix(*newEndTime, 0)
+	}
+
+	if err := s.repo.UpdateAuction(ctx, auction); err != nil {
+		return nil, err
+	}
+
+	return bid, nil
+}
+
+// FinalizeAuctionSync syncs auction finalization from chain to backend
+func (s *Service) FinalizeAuctionSync(ctx context.Context, auctionID int64, winnerWallet string, finalPrice float64, displayID, offChainDIDHash, onChainDIDHash, txHash string) error {
+	// Update auction status
+	auction, err := s.repo.GetAuction(ctx, auctionID)
+	if err != nil {
+		return err
+	}
+	if auction == nil {
+		return fmt.Errorf("auction not found")
+	}
+
+	auction.Status = model.AuctionStatusSold
+	auction.WinnerWallet = &winnerWallet
+	auction.FinalPrice = &finalPrice
+	auction.TxHash = &txHash
+	auction.UpdatedAt = time.Now()
+
+	if err := s.repo.UpdateAuction(ctx, auction); err != nil {
+		return err
+	}
+
+	// Generate off-chain DID hash if not provided (keccak256 of displayID)
+	if offChainDIDHash == "" {
+		offChainDIDHash = fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
+	}
+
+	// Get on-chain DID hash from database based on winner wallet
+	onChainDID, _ := s.repo.GetOnChainDIDByWallet(ctx, winnerWallet)
+	if onChainDID != nil && onChainDIDHash == "" {
+		onChainDIDHash = onChainDID.DIDHash
+	}
+
+	// Create off-chain DID record if not exists
+	existing, _ := s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+	if existing == nil {
+		offChainDID := &model.OffChainDID{
+			DisplayID:             displayID,
+			DIDHash:               offChainDIDHash,
+			Tier:                  auction.Tier,
+			IsSystemGenerated:     false,
+			CurrentOwnerOnChainID: &onChainDIDHash,
+			Active:                true,
+			CreatedAt:             time.Now(),
+			UpdatedAt:             time.Now(),
+		}
+		if err := s.repo.CreateOffChainDID(ctx, offChainDID); err != nil {
+			return err
+		}
+	} else {
+		// Update existing
+		existing.CurrentOwnerOnChainID = &onChainDIDHash
+		existing.Active = true
+		existing.UpdatedAt = time.Now()
+		if err := s.repo.UpdateOffChainDID(ctx, existing); err != nil {
+			return err
+		}
+	}
+
+	// Update on_chain_dids.linked_off_chain_id to link the off-chain DID
+	if onChainDID != nil {
+		onChainDID.LinkedOffChainID = &offChainDIDHash
+		if err := s.repo.UpdateOnChainDID(ctx, onChainDID); err != nil {
+			return err
+		}
+	}
+
+	// Update user's display_id and did
+	user, _ := s.repo.GetUserByWallet(ctx, winnerWallet)
+	if user != nil {
+		if err := s.repo.UpdateUserDisplayID(ctx, user.ID, displayID); err != nil {
+			return err
+		}
+		// Also update user's did field
+		if onChainDIDHash != "" {
+			if err := s.repo.UpdateUserDID(ctx, winnerWallet, onChainDIDHash); err != nil {
+				// Log but don't fail
+			}
+		}
+	}
+
+	return nil
+}
+
+// GetPremiumDIDStats returns statistics for premium DIDs
+func (s *Service) GetPremiumDIDStats(ctx context.Context) (*model.PremiumDIDStats, error) {
+	return s.repo.GetPremiumDIDStats(ctx)
+}
+
+// GetAvailablePremiumDIDs returns premium DIDs available for purchase
+func (s *Service) GetAvailablePremiumDIDs(ctx context.Context, tier string, page, pageSize int) ([]*model.OffChainDID, int, error) {
+	return s.repo.GetAvailablePremiumDIDs(ctx, tier, page, pageSize)
+}
+
+// CreatePremiumDID creates a premium DID (admin only)
+func (s *Service) CreatePremiumDID(ctx context.Context, displayID string, tier model.DIDTier) (*model.OffChainDID, error) {
+	if tier == model.DIDTierNormal {
+		return nil, fmt.Errorf("premium DID must have a tier")
+	}
+
+	// Check if exists
+	existing, _ := s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+	if existing != nil {
+		return nil, fmt.Errorf("display ID already exists")
+	}
+
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
+
+	premiumDID := &model.OffChainDID{
+		DisplayID:         displayID,
+		DIDHash:           didHash,
+		Tier:              tier,
+		IsSystemGenerated: true,
+		Active:            true,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+
+	if err := s.repo.CreateOffChainDID(ctx, premiumDID); err != nil {
+		return nil, err
+	}
+
+	return premiumDID, nil
+}
+
+// CreatePremiumDIDsBatch creates multiple premium DIDs
+func (s *Service) CreatePremiumDIDsBatch(ctx context.Context, dids []struct {
+	DisplayID string `json:"display_id"`
+	Tier      int    `json:"tier"`
+}) (int, int, error) {
+	created := 0
+	failed := 0
+
+	for _, did := range dids {
+		_, err := s.CreatePremiumDID(ctx, did.DisplayID, model.DIDTier(did.Tier))
+		if err != nil {
+			failed++
+		} else {
+			created++
+		}
+	}
+
+	return created, failed, nil
+}
+
+// CreateAuction creates an auction for a premium DID
+func (s *Service) CreateAuction(ctx context.Context, displayID string, auctionType model.AuctionType, startPrice, minIncrement float64, duration int, paymentToken string) (*model.PremiumDIDAuction, error) {
+	offChainDID, err := s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+	if err != nil {
+		return nil, err
+	}
+	if offChainDID == nil {
+		return nil, fmt.Errorf("off-chain DID not found")
+	}
+	if !offChainDID.IsSystemGenerated {
+		return nil, fmt.Errorf("only premium DIDs can be auctioned")
+	}
+	if offChainDID.CurrentOwnerOnChainID != nil {
+		return nil, fmt.Errorf("DID already has an owner")
+	}
+
+	// Check if already in auction
+	existing, _ := s.repo.GetActiveAuctionByDIDHash(ctx, offChainDID.DIDHash)
+	if existing != nil {
+		return nil, fmt.Errorf("DID is already in an active auction")
+	}
+
+	if duration == 0 {
+		duration = 7 * 24 // Default 7 days
+	}
+
+	auction := &model.PremiumDIDAuction{
+		OffChainDIDHash: offChainDID.DIDHash,
+		DisplayID:       displayID,
+		Tier:            offChainDID.Tier,
+		AuctionType:     auctionType,
+		StartPrice:      startPrice,
+		CurrentPrice:    startPrice,
+		MinIncrement:    minIncrement,
+		ReservePrice:    startPrice * 0.2, // 20% floor
+		StartTime:       time.Now(),
+		EndTime:         time.Now().Add(time.Duration(duration) * time.Hour),
+		PaymentToken:    paymentToken,
+		Status:          model.AuctionStatusActive,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
+	}
+
+	if err := s.repo.CreateAuction(ctx, auction); err != nil {
+		return nil, err
+	}
+
+	return auction, nil
+}
+
+// SyncShortIdAuction syncs a user-created short ID auction from chain to backend
+func (s *Service) SyncShortIdAuction(ctx context.Context, displayID string, chainAuctionID int64, startPrice float64, paymentToken, txHash, creatorWallet string) (*model.PremiumDIDAuction, error) {
+	// Generate DID hash for the short ID
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte("SHORT_AUCTION:"+displayID)))
+
+	// Check if auction already exists
+	existing, _ := s.repo.GetAuctionByChainID(ctx, chainAuctionID)
+	if existing != nil {
+		return existing, nil
+	}
+
+	// Determine tier based on length
+	length := len(displayID)
+	tier := model.DIDTierS // Default to TierS for short IDs
+
+	// Calculate min increment (10% of start price)
+	minIncrement := startPrice / 10
+	if minIncrement == 0 {
+		minIncrement = 1
+	}
+
+	now := time.Now()
+	auction := &model.PremiumDIDAuction{
+		ChainAuctionID:  &chainAuctionID,
+		OffChainDIDHash: didHash,
+		DisplayID:       displayID,
+		Tier:            tier,
+		AuctionType:     model.AuctionTypeEnglish,
+		StartPrice:      startPrice,
+		CurrentPrice:    0,
+		MinIncrement:    minIncrement,
+		ReservePrice:    startPrice,
+		StartTime:       now,
+		EndTime:         now.Add(30 * time.Minute),
+		PaymentToken:    paymentToken,
+		Status:          model.AuctionStatusActive,
+		TxHash:          &txHash,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	// Adjust tier based on length (shorter = more valuable)
+	if length == 1 {
+		auction.Tier = model.DIDTierSSS
+	} else if length == 2 {
+		auction.Tier = model.DIDTierSS
+	} else if length == 3 {
+		auction.Tier = model.DIDTierS
+	} else {
+		auction.Tier = model.DIDTierA
+	}
+
+	if err := s.repo.CreateAuction(ctx, auction); err != nil {
+		return nil, err
+	}
+
+	return auction, nil
+}
+
+// CancelAuction cancels an auction
+func (s *Service) CancelAuction(ctx context.Context, auctionID int64) error {
+	auction, err := s.repo.GetAuction(ctx, auctionID)
+	if err != nil {
+		return err
+	}
+	if auction == nil {
+		return fmt.Errorf("auction not found")
+	}
+	if auction.Status != model.AuctionStatusActive {
+		return fmt.Errorf("auction cannot be cancelled")
+	}
+
+	auction.Status = model.AuctionStatusCancelled
+	auction.UpdatedAt = time.Now()
+
+	return s.repo.UpdateAuction(ctx, auction)
 }

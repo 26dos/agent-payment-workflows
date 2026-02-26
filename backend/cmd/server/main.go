@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/clawpay/backend/internal/config"
+	"github.com/clawpay/backend/internal/email"
 	"github.com/clawpay/backend/internal/handler"
 	"github.com/clawpay/backend/internal/middleware"
 	"github.com/clawpay/backend/internal/repository"
@@ -56,7 +57,15 @@ func main() {
 	// Initialize layers
 	repo := repository.New(pool)
 	svc := service.New(repo)
-	h := handler.New(svc, cfg.JWTSecret)
+	emailSvc := email.New(cfg)
+	h := handler.New(svc, cfg.JWTSecret, emailSvc)
+
+	// Log email service status
+	if emailSvc.IsConfigured() {
+		log.Info().Msg("Email service configured and ready")
+	} else {
+		log.Warn().Msg("Email service not configured - verification codes will be returned in API response (dev mode)")
+	}
 
 	// Setup router
 	router := gin.New()
@@ -85,8 +94,15 @@ func main() {
 		// Auth routes (public)
 		auth := api.Group("/auth")
 		{
+			// Wallet auth
 			auth.GET("/nonce", h.GetNonce)
 			auth.POST("/login", h.Login)
+
+			// Email auth
+			auth.POST("/email/send-code", h.SendVerificationCode)
+			auth.POST("/email/register", h.EmailRegister)
+			auth.POST("/email/login", h.EmailLogin)
+			auth.POST("/email/login-with-code", h.EmailLoginWithCode)
 		}
 
 		// Public routes (no auth required)
@@ -107,6 +123,14 @@ func main() {
 			{
 				user.GET("/profile", h.GetProfile)
 				user.PUT("/did", h.UpdateDID)
+				user.GET("/business-access", h.CheckBusinessAccess)
+			}
+
+			// Wallet binding routes (for email users)
+			wallet := protected.Group("/wallet")
+			{
+				wallet.GET("/bind/nonce", h.GetBindWalletNonce)
+				wallet.POST("/bind", h.BindWallet)
 			}
 
 			// Agent routes
@@ -154,6 +178,77 @@ func main() {
 				batch.POST("/mark-onchain", h.MarkTasksOnChain)
 				batch.GET("/config", h.GetBatchConfig)
 				batch.PUT("/config", h.UpdateBatchConfig)
+			}
+
+			// Incentive system routes
+			incentives := protected.Group("/incentives")
+			{
+				incentives.GET("/constants", h.GetIncentiveConstants)
+				incentives.GET("/human", h.GetHumanIncentive)
+				incentives.GET("/agent", h.GetAgentIncentive)
+				incentives.GET("/summary", h.GetIncentiveSummary)
+				incentives.POST("/claim-human", h.ClaimRegistrationBonus)
+				incentives.POST("/claim-agent", h.ClaimAgentBonus)
+				incentives.POST("/generate-invite", h.GenerateInviteCode)
+				incentives.POST("/record-completion", h.RecordTaskCompletion)
+				incentives.GET("/leaderboard/referrals", h.GetReferralLeaderboard)
+				incentives.GET("/leaderboard/points", h.GetPointsLeaderboard)
+			}
+
+			// Task specification routes
+			specs := protected.Group("/specifications")
+			{
+				specs.POST("", h.CreateTaskSpecification)
+				specs.GET("/:id", h.GetTaskSpecification)
+				specs.POST("/validate", h.ValidateProvider)
+			}
+
+			// Task results routes
+			results := protected.Group("/results")
+			{
+				results.POST("", h.SubmitTaskResult)
+				results.GET("/:id", h.GetTaskResult)
+			}
+
+			// Dual DID system routes
+			dids := protected.Group("/dids")
+			{
+				dids.POST("/on-chain", h.RegisterOnChainDID)
+				dids.POST("/off-chain", h.RegisterOffChainDID)
+				dids.POST("/complete", h.CompleteRegistration)
+				dids.GET("/my", h.GetMyDIDs)
+				dids.GET("/validate", h.ValidateDisplayID)
+				dids.GET("/off-chain/:display_id", h.GetOffChainDID)
+			}
+
+			// DID transfer routes
+			transfers := protected.Group("/transfers")
+			{
+				transfers.POST("/list", h.ListDIDForTransfer)
+				transfers.DELETE("/:display_id", h.CancelDIDTransferListing)
+				transfers.GET("", h.GetDIDTransferListings)
+			}
+
+			// Premium DID auction routes
+			auctions := protected.Group("/auctions")
+			{
+				auctions.GET("", h.GetActiveAuctions)
+				auctions.GET("/stats", h.GetPremiumDIDStats)
+				auctions.GET("/premium-dids", h.GetAvailablePremiumDIDs)
+				auctions.GET("/:id", h.GetAuction)
+				auctions.GET("/:id/bids", h.GetAuctionBids)
+				auctions.POST("/bid", h.RecordBid)
+				auctions.POST("/sync-short-id", h.SyncShortIdAuction)
+				auctions.POST("/finalize-sync", h.FinalizeAuctionSync)
+			}
+
+			// Admin premium DID routes
+			adminDID := protected.Group("/admin/dids")
+			{
+				adminDID.POST("/premium", h.CreatePremiumDID)
+				adminDID.POST("/premium/batch", h.CreatePremiumDIDsBatch)
+				adminDID.POST("/auctions", h.CreateAuction)
+				adminDID.DELETE("/auctions/:id", h.CancelAuction)
 			}
 		}
 	}

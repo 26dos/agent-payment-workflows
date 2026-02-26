@@ -8,14 +8,22 @@ import "./DIDRegistry.sol";
  * @title ReputationScore
  * @dev Manages reputation scores for Human DIDs and Agent DIDs
  * Final Score = (Human_Score × 0.7) + (Agent_Score × 0.3)
+ * 
+ * Features:
+ * - Initial score: 60 (baseline)
+ * - Reputation cascading: Agent drops 10 → Human drops 1
+ * - Blacklist support for severe violations
  */
 contract ReputationScore is Ownable {
     // ============ Constants ============
 
-    uint256 public constant INITIAL_SCORE = 75;
+    uint256 public constant INITIAL_SCORE = 60; // Changed from 75 to 60 (baseline)
     uint256 public constant MAX_SCORE = 100;
     uint256 public constant MIN_SCORE = 0;
-    uint256 public constant SCORE_DECIMALS = 2; // Scores stored with 2 decimal places (75.00 = 7500)
+    uint256 public constant SCORE_DECIMALS = 2; // Scores stored with 2 decimal places (60.00 = 6000)
+    
+    // Reputation cascading ratio (Agent drops 10 → Human drops 1)
+    uint256 public constant CASCADE_RATIO = 10;
 
     // Weight factors (in basis points, 10000 = 100%)
     uint256 public constant HUMAN_WEIGHT = 7000; // 70%
@@ -55,12 +63,22 @@ contract ReputationScore is Ownable {
 
     // Authorized updaters (Escrow contract, etc.)
     mapping(address => bool) public authorizedUpdaters;
+    
+    // Blacklist tracking
+    mapping(bytes32 => bool) public blacklistedHumans;
+    mapping(bytes32 => uint256) public blacklistedAt;
+    
+    // Reputation change history for cascading
+    mapping(bytes32 => uint256) public lastAgentScore; // Track last score for cascade calculation
 
     // ============ Events ============
 
     event ScoreUpdated(bytes32 indexed did, bool isHuman, uint256 oldScore, uint256 newScore, string reason);
     event StatsUpdated(bytes32 indexed did, bool isHuman, uint256 totalTasks, uint256 successfulTasks);
     event UpdaterAuthorized(address indexed updater, bool authorized);
+    event ReputationCascade(bytes32 indexed humanDID, bytes32 indexed agentDID, uint256 agentDrop, uint256 humanDrop);
+    event HumanBlacklisted(bytes32 indexed humanDID, string reason);
+    event HumanUnblacklisted(bytes32 indexed humanDID);
 
     // ============ Modifiers ============
 
@@ -314,6 +332,121 @@ contract ReputationScore is Ownable {
         emit ScoreUpdated(humanDID, true, oldScore, newScore, increase ? "increase" : "decrease");
     }
 
+    // ============ Reputation Cascading Functions ============
+
+    /**
+     * @dev Record dispute with automatic reputation cascading
+     * Agent score drops affect Human score at 10:1 ratio
+     * @param agentDID The DID that caused the dispute
+     * @param severity 1=minor, 2=moderate, 3=severe
+     */
+    function recordDisputeWithCascade(bytes32 agentDID, uint8 severity) external onlyAuthorized {
+        DIDRegistry.AgentDID memory agent = didRegistry.getAgentDID(agentDID);
+        bytes32 humanDID = agent.humanDID;
+        
+        // Store old score for cascade calculation
+        uint256 oldAgentScore = agentInitialized[agentDID] ? agentScores[agentDID] : INITIAL_SCORE * 100;
+        
+        // Update stats
+        agentStats[agentDID].disputedTasks++;
+        humanStats[humanDID].disputedTasks++;
+
+        // Calculate score reduction
+        uint256 reduction;
+        if (severity == 1) {
+            reduction = 100; // -1.00
+        } else if (severity == 2) {
+            reduction = 300; // -3.00
+        } else {
+            reduction = 500; // -5.00
+        }
+
+        // Agent score drops faster (2x)
+        uint256 agentReduction = reduction * 2;
+        _adjustScore(agentDID, false, agentReduction);
+        
+        // Calculate new agent score
+        uint256 newAgentScore = agentScores[agentDID];
+        
+        // Apply cascading to human (10:1 ratio)
+        if (oldAgentScore > newAgentScore) {
+            uint256 agentDrop = oldAgentScore - newAgentScore;
+            uint256 humanDrop = agentDrop / CASCADE_RATIO;
+            
+            if (humanDrop > 0) {
+                _adjustHumanScore(humanDID, false, humanDrop);
+                emit ReputationCascade(humanDID, agentDID, agentDrop, humanDrop);
+            }
+        }
+    }
+
+    /**
+     * @dev Apply direct reputation cascade from agent to human
+     * Called when an agent's reputation drops significantly
+     * @param agentDID The Agent DID
+     * @param agentDrop Amount of agent score drop (with 2 decimals)
+     */
+    function applyCascade(bytes32 agentDID, uint256 agentDrop) external onlyAuthorized {
+        DIDRegistry.AgentDID memory agent = didRegistry.getAgentDID(agentDID);
+        bytes32 humanDID = agent.humanDID;
+        
+        uint256 humanDrop = agentDrop / CASCADE_RATIO;
+        
+        if (humanDrop > 0) {
+            _adjustHumanScore(humanDID, false, humanDrop);
+            emit ReputationCascade(humanDID, agentDID, agentDrop, humanDrop);
+        }
+    }
+
+    // ============ Blacklist Functions ============
+
+    /**
+     * @dev Blacklist a Human DID (super arbitration violation)
+     * @param humanDID The Human DID to blacklist
+     * @param reason Reason for blacklisting
+     */
+    function blacklistHuman(bytes32 humanDID, string calldata reason) external onlyAuthorized {
+        require(!blacklistedHumans[humanDID], "ReputationScore: already blacklisted");
+        
+        blacklistedHumans[humanDID] = true;
+        blacklistedAt[humanDID] = block.timestamp;
+        
+        // Set score to 0
+        uint256 oldScore = humanScores[humanDID];
+        humanScores[humanDID] = 0;
+        
+        // Deactivate all agent scores under this human
+        bytes32[] memory agents = didRegistry.getAgentsByHuman(humanDID);
+        for (uint256 i = 0; i < agents.length; i++) {
+            uint256 oldAgentScore = agentScores[agents[i]];
+            agentScores[agents[i]] = 0;
+            emit ScoreUpdated(agents[i], false, oldAgentScore, 0, "human_blacklisted");
+        }
+        
+        emit ScoreUpdated(humanDID, true, oldScore, 0, "blacklisted");
+        emit HumanBlacklisted(humanDID, reason);
+    }
+
+    /**
+     * @dev Remove Human DID from blacklist (admin only, exceptional cases)
+     * @param humanDID The Human DID to unblacklist
+     */
+    function unblacklistHuman(bytes32 humanDID) external onlyOwner {
+        require(blacklistedHumans[humanDID], "ReputationScore: not blacklisted");
+        
+        blacklistedHumans[humanDID] = false;
+        // Note: Score remains at 0, must be rebuilt through good behavior
+        
+        emit HumanUnblacklisted(humanDID);
+    }
+
+    /**
+     * @dev Check if a Human DID is blacklisted
+     */
+    function isBlacklisted(bytes32 humanDID) external view returns (bool) {
+        return blacklistedHumans[humanDID];
+    }
+
     // ============ View Functions ============
 
     function getHumanStats(bytes32 humanDID) external view returns (ScoreStats memory) {
@@ -322,5 +455,30 @@ contract ReputationScore is Ownable {
 
     function getAgentStats(bytes32 agentDID) external view returns (ScoreStats memory) {
         return agentStats[agentDID];
+    }
+    
+    /**
+     * @dev Get effective reputation coefficient considering blacklist
+     * Returns 0 if blacklisted, otherwise normal coefficient
+     */
+    function getEffectiveCoefficient(bytes32 agentDID) external view returns (uint256) {
+        DIDRegistry.AgentDID memory agent = didRegistry.getAgentDID(agentDID);
+        
+        // If human is blacklisted, return maximum penalty
+        if (blacklistedHumans[agent.humanDID]) {
+            return 0;
+        }
+        
+        uint256 score = getFinalScore(agentDID);
+
+        if (score >= PREMIUM_THRESHOLD) {
+            return 8000;  // 0.8x discount
+        } else if (score >= NORMAL_LOW) {
+            return 10000; // 1.0x normal
+        } else if (score >= CRITICAL_THRESHOLD) {
+            return 12000; // 1.2x penalty
+        } else {
+            return 15000; // 1.5x severe penalty
+        }
     }
 }

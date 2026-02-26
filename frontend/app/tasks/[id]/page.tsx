@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAccount, useConnect, useSignMessage, useDisconnect } from 'wagmi';
+import { useAccount, useConnect, useSignMessage, useDisconnect, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import Link from 'next/link';
 import { publicApi, taskApiV2, agentApi, authApi } from '@/lib/api';
 import { useAppStore } from '@/lib/store';
 import { formatDID } from '@/lib/contracts/hooks';
+import { CONTRACT_ADDRESSES } from '@/lib/config';
+import { ESCROW_ABI } from '@/lib/contracts/abis';
 import { 
   ArrowLeft, 
   Loader2, 
@@ -39,6 +41,7 @@ export default function PublicTaskDetailPage() {
   const [task, setTask] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [acceptStep, setAcceptStep] = useState<'idle' | 'chain' | 'backend'>('idle');
   const [isConnecting, setIsConnecting] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
@@ -46,6 +49,9 @@ export default function PublicTaskDetailPage() {
   const [success, setSuccess] = useState(false);
   const [myAgents, setMyAgents] = useState<any[]>([]);
   const [mounted, setMounted] = useState(false);
+
+  const { writeContract, data: acceptHash, isPending: isAcceptPending, error: acceptError } = useWriteContract();
+  const { isLoading: isAcceptConfirming, isSuccess: isAcceptSuccess } = useWaitForTransactionReceipt({ hash: acceptHash });
 
   useEffect(() => {
     setMounted(true);
@@ -124,20 +130,56 @@ export default function PublicTaskDetailPage() {
       return;
     }
 
-    setIsAccepting(true);
-    setError(null);
-    try {
-      await taskApiV2.accept(Number(params.id), agent.sub_did);
-      setSuccess(true);
-      // Reload task
-      const data = await publicApi.getTask(Number(params.id));
-      setTask(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to accept task');
-    } finally {
-      setIsAccepting(false);
+    if (!task?.chain_task_id && task?.chain_task_id !== 0) {
+      setError('Task has no chain ID');
+      return;
     }
+
+    setIsAccepting(true);
+    setAcceptStep('chain');
+    setError(null);
+
+    writeContract({
+      address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+      abi: ESCROW_ABI,
+      functionName: 'acceptOpenTask',
+      args: [BigInt(task.chain_task_id), agent.sub_did as `0x${string}`],
+      gas: BigInt(500000),
+    });
   };
+
+  // Handle chain transaction success -> update backend
+  useEffect(() => {
+    const updateBackend = async () => {
+      if (isAcceptSuccess && acceptStep === 'chain') {
+        setAcceptStep('backend');
+        const agent = myAgents.find(a => a.id === selectedAgentId);
+        if (!agent?.sub_did) return;
+
+        try {
+          await taskApiV2.accept(Number(params.id), agent.sub_did, acceptHash);
+          setSuccess(true);
+          const data = await publicApi.getTask(Number(params.id));
+          setTask(data);
+        } catch (err: any) {
+          setError(err.message || 'Failed to update backend');
+        } finally {
+          setIsAccepting(false);
+          setAcceptStep('idle');
+        }
+      }
+    };
+    updateBackend();
+  }, [isAcceptSuccess, acceptStep, myAgents, selectedAgentId, params.id, acceptHash]);
+
+  // Handle chain transaction error
+  useEffect(() => {
+    if (acceptError) {
+      setError(acceptError.message || 'Chain transaction failed');
+      setIsAccepting(false);
+      setAcceptStep('idle');
+    }
+  }, [acceptError]);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString();

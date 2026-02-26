@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
 import "../src/USD1Mock.sol";
-import "../src/DIDRegistry.sol";
+import "../src/DualDIDRegistry.sol";
 import "../src/ReputationScore.sol";
 import "../src/DynamicPricing.sol";
 import "../src/InsurancePool.sol";
@@ -22,12 +22,12 @@ contract DeployScript is Script {
         USD1Mock usd1 = new USD1Mock();
         console.log("USD1Mock deployed at:", address(usd1));
 
-        // 2. Deploy DIDRegistry
-        DIDRegistry didRegistry = new DIDRegistry();
-        console.log("DIDRegistry deployed at:", address(didRegistry));
+        // 2. Deploy DualDIDRegistry
+        DualDIDRegistry dualDIDRegistry = new DualDIDRegistry(deployer);
+        console.log("DualDIDRegistry deployed at:", address(dualDIDRegistry));
 
-        // 3. Deploy ReputationScore
-        ReputationScore reputationScore = new ReputationScore(address(didRegistry));
+        // 3. Deploy ReputationScore (using address(0) for old DIDRegistry)
+        ReputationScore reputationScore = new ReputationScore(address(0));
         console.log("ReputationScore deployed at:", address(reputationScore));
 
         // 4. Deploy DynamicPricing
@@ -41,7 +41,7 @@ contract DeployScript is Script {
         // 6. Deploy ClawPayEscrow
         ClawPayEscrow escrow = new ClawPayEscrow(
             address(usd1),
-            address(didRegistry),
+            address(dualDIDRegistry),
             address(reputationScore),
             address(dynamicPricing),
             address(insurancePool)
@@ -49,20 +49,17 @@ contract DeployScript is Script {
         console.log("ClawPayEscrow deployed at:", address(escrow));
 
         // 7. Setup permissions
-        // Authorize Escrow to update reputation scores
         reputationScore.setAuthorizedUpdater(address(escrow), true);
         console.log("Escrow authorized to update reputation scores");
 
-        // Authorize Escrow to use insurance pool
         insurancePool.setAuthorizedContract(address(escrow), true);
         console.log("Escrow authorized to use insurance pool");
 
         vm.stopBroadcast();
 
-        // Output deployment addresses for frontend config
         console.log("\n=== Deployment Summary ===");
         console.log("USD1Mock:", address(usd1));
-        console.log("DIDRegistry:", address(didRegistry));
+        console.log("DualDIDRegistry:", address(dualDIDRegistry));
         console.log("ReputationScore:", address(reputationScore));
         console.log("DynamicPricing:", address(dynamicPricing));
         console.log("InsurancePool:", address(insurancePool));

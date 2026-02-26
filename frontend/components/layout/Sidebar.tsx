@@ -11,6 +11,10 @@ import {
   Settings,
   LogOut,
   Link2,
+  Gift,
+  FileText,
+  User,
+  Crown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/lib/store';
@@ -18,8 +22,12 @@ import { Button } from '@/components/ui/button';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/did', label: 'My DID', icon: User },
+  { href: '/dashboard/did/market', label: 'Premium DIDs', icon: Crown },
   { href: '/dashboard/agents', label: 'Agents', icon: Bot },
   { href: '/dashboard/tasks', label: 'Tasks', icon: ListTodo },
+  { href: '/dashboard/tasks/publish', label: 'Publish Task', icon: FileText },
+  { href: '/dashboard/incentives', label: 'Incentives', icon: Gift },
   { href: '/dashboard/wallet', label: 'Wallet', icon: Wallet },
   { href: '/dashboard/reputation', label: 'Reputation', icon: Award },
   { href: '/dashboard/admin/batch', label: 'Batch On-Chain', icon: Link2 },

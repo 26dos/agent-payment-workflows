@@ -11,9 +11,9 @@ contract DeployEscrowScript is Script {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
 
-        // Existing contract addresses (do not redeploy)
+        // Contract addresses
         address usd1 = 0x8b4C6b67976D9863FD56f6fFF140e501d838a758;
-        address didRegistry = 0x0071cA34341557Db09Eb976db947d9Cb1F06Ada8;
+        address dualDIDRegistry = 0x9A919E20Ae135BAfC12bb7620cff5F2d4c8FCd69;
         address reputationScore = 0xBB78F645C565bCbB3d4a30A7398b61f7968e60b2;
         address dynamicPricing = 0x28dBC4F5d362A3778F5492f1623C1777e8b24529;
         address insurancePool = 0x8E0Ea2482196e4CcFDdB601E007BCa9AFe71Df75;
@@ -22,24 +22,21 @@ contract DeployEscrowScript is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy new ClawPayEscrow with batch support
         ClawPayEscrow escrow = new ClawPayEscrow(
             usd1,
-            didRegistry,
+            dualDIDRegistry,
             reputationScore,
             dynamicPricing,
             insurancePool
         );
         console.log("New ClawPayEscrow deployed at:", address(escrow));
 
-        // Setup permissions
         ReputationScore(reputationScore).setAuthorizedUpdater(address(escrow), true);
         console.log("Escrow authorized to update reputation scores");
 
         InsurancePool(insurancePool).setAuthorizedContract(address(escrow), true);
         console.log("Escrow authorized to use insurance pool");
 
-        // Set arbitration wallet (same as deployer for now)
         escrow.setArbitrationWallet(deployer);
         console.log("Arbitration wallet set to:", deployer);
 

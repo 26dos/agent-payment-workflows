@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useAccount, useReadContract } from 'wagmi';
+import { useEffect, useState, useCallback } from 'react';
+import { useAccount, useReadContract, usePublicClient } from 'wagmi';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useAppStore } from '@/lib/store';
@@ -10,30 +10,40 @@ import { getScoreColor } from '@/lib/utils';
 import { Award, TrendingUp, TrendingDown, Activity, Shield, AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { CONTRACT_ADDRESSES } from '@/lib/config';
-import { DID_REGISTRY_ABI, REPUTATION_ABI } from '@/lib/contracts/abis';
+import { DUAL_DID_REGISTRY_ABI, REPUTATION_ABI, ESCROW_ABI } from '@/lib/contracts/abis';
+
+const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+const statusMap: Record<number, string> = {
+  0: 'created', 1: 'accepted', 2: 'completed',
+  3: 'disputed', 4: 'resolved', 5: 'cancelled', 6: 'expired',
+};
 
 export default function ReputationPage() {
   const { address } = useAccount();
-  const { user, agents, dashboardStats } = useAppStore();
+  const { user, agents, dashboardStats, setDashboardStats } = useAppStore();
   const [onChainScores, setOnChainScores] = useState<{ requester: number; provider: number } | null>(null);
   const [isLoadingScores, setIsLoadingScores] = useState(false);
+  const publicClient = usePublicClient();
 
-  // Get Human DID from chain
+  // Get On-Chain DID from DualDIDRegistry
   const { data: humanDID } = useReadContract({
-    address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-    abi: DID_REGISTRY_ABI,
-    functionName: 'addressToHumanDID',
+    address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+    abi: DUAL_DID_REGISTRY_ABI,
+    functionName: 'walletToOnChainDID',
     args: address ? [address] : undefined,
     query: { enabled: !!address },
   });
 
-  // Get Agent DIDs
+  const hasOnChainDID = humanDID && humanDID !== ZERO_BYTES32;
+
+  // Get Sub-DIDs (Agent DIDs) from DualDIDRegistry
   const { data: agentDIDs } = useReadContract({
-    address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-    abi: DID_REGISTRY_ABI,
-    functionName: 'getAgentsByHuman',
-    args: humanDID ? [humanDID] : undefined,
-    query: { enabled: !!humanDID },
+    address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+    abi: DUAL_DID_REGISTRY_ABI,
+    functionName: 'getSubDIDsByOnChainDID',
+    args: hasOnChainDID ? [humanDID as `0x${string}`] : undefined,
+    query: { enabled: hasOnChainDID },
   });
 
   // Fetch on-chain scores
@@ -79,6 +89,64 @@ export default function ReputationPage() {
     
     fetchScores();
   }, [agentDIDs]);
+
+  // Load task stats from chain
+  const loadTaskStats = useCallback(async () => {
+    if (!publicClient || !agentDIDs) return;
+
+    try {
+      const taskCount = await publicClient.readContract({
+        address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+        abi: ESCROW_ABI,
+        functionName: 'taskCount',
+      }) as bigint;
+
+      if (taskCount === BigInt(0)) {
+        setDashboardStats({ total_tasks: 0, completed_tasks: 0, active_tasks: 0, disputed_tasks: 0, total_volume: 0, total_agents: 0 });
+        return;
+      }
+
+      const userDIDs: Set<string> = new Set();
+      (agentDIDs as `0x${string}`[]).forEach(did => userDIDs.add(did.toLowerCase()));
+
+      let totalTasks = 0, completedTasks = 0, disputedTasks = 0;
+      for (let i = 0; i < Number(taskCount); i++) {
+        try {
+          const task = await publicClient.readContract({
+            address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+            abi: ESCROW_ABI,
+            functionName: 'tasks',
+            args: [BigInt(i)],
+          }) as any;
+
+          const requesterDID = (task[0] || '').toLowerCase();
+          const providerDID = (task[1] || '').toLowerCase();
+
+          if (userDIDs.has(requesterDID) || userDIDs.has(providerDID)) {
+            totalTasks++;
+            const statusNum = Number(task[6] || 0);
+            if (statusNum === 2) completedTasks++;
+            if (statusNum === 3) disputedTasks++;
+          }
+        } catch {}
+      }
+
+      setDashboardStats({
+        total_tasks: totalTasks,
+        completed_tasks: completedTasks,
+        active_tasks: totalTasks - completedTasks - disputedTasks,
+        disputed_tasks: disputedTasks,
+        total_volume: 0,
+        total_agents: (agentDIDs as `0x${string}`[]).length,
+      });
+    } catch (error) {
+      console.error('Failed to load task stats:', error);
+    }
+  }, [publicClient, agentDIDs, setDashboardStats]);
+
+  useEffect(() => {
+    loadTaskStats();
+  }, [loadTaskStats]);
 
   // Use on-chain scores if available, otherwise fall back to backend
   const humanScore = user?.human_score || 75;

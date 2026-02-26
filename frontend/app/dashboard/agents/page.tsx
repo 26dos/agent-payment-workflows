@@ -15,6 +15,7 @@ export default function AgentsPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newAgentName, setNewAgentName] = useState('');
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadAgents = async () => {
@@ -31,16 +32,28 @@ export default function AgentsPage() {
   }, [setAgents]);
 
   const handleCreateAgent = async () => {
-    if (!newAgentName.trim()) return;
+    const trimmedName = newAgentName.trim();
+    if (!trimmedName) return;
+
+    setCreateError(null);
+
+    const nameExists = agents.some(
+      (agent) => agent.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+    if (nameExists) {
+      setCreateError(`Agent with name '${trimmedName}' already exists`);
+      return;
+    }
 
     setIsCreating(true);
     try {
-      const agent = await agentApi.create(newAgentName);
+      const agent = await agentApi.create(trimmedName);
       addAgent(agent);
       setNewAgentName('');
       setShowCreateForm(false);
-    } catch (error) {
-      console.error('Failed to create agent:', error);
+    } catch (error: any) {
+      const message = error?.message || error?.toString() || 'Failed to create agent';
+      setCreateError(message);
     } finally {
       setIsCreating(false);
     }
@@ -70,7 +83,10 @@ export default function AgentsPage() {
               <Input
                 placeholder="Agent name (e.g., Research_Agent_01)"
                 value={newAgentName}
-                onChange={(e) => setNewAgentName(e.target.value)}
+                onChange={(e) => {
+                  setNewAgentName(e.target.value);
+                  setCreateError(null);
+                }}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateAgent()}
               />
               <Button onClick={handleCreateAgent} disabled={isCreating || !newAgentName.trim()}>
@@ -83,10 +99,13 @@ export default function AgentsPage() {
                   'Create'
                 )}
               </Button>
-              <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+              <Button variant="outline" onClick={() => { setShowCreateForm(false); setCreateError(null); }}>
                 Cancel
               </Button>
             </div>
+            {createError && (
+              <p className="text-sm text-red-500">{createError}</p>
+            )}
             <p className="text-sm text-muted-foreground">
               After creating, you can register the agent on-chain and configure its mandate.
             </p>

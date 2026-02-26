@@ -14,9 +14,11 @@ import { formatAddress } from '@/lib/utils';
 import { userApi } from '@/lib/api';
 import { 
   USD1_ABI, 
-  DID_REGISTRY_ABI,
+  DUAL_DID_REGISTRY_ABI,
   ESCROW_ABI 
 } from '@/lib/contracts/abis';
+
+const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000';
 import { formatDID } from '@/lib/contracts/hooks';
 import { 
   Wallet, 
@@ -57,24 +59,23 @@ export default function WalletPage() {
   // BNB Balance
   const { data: bnbBalance } = useBalance({ address });
 
-  // Read Human DID from contract
+  // Read On-Chain DID from DualDIDRegistry
   const { data: onChainHumanDID, refetch: refetchHumanDID } = useReadContract({
-    address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-    abi: DID_REGISTRY_ABI,
-    functionName: 'addressToHumanDID',
+    address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+    abi: DUAL_DID_REGISTRY_ABI,
+    functionName: 'walletToOnChainDID',
     args: address ? [address] : undefined,
     query: { enabled: !!address },
   });
 
-  // Check if Human DID is valid (not zero)
-  const hasHumanDID = onChainHumanDID && 
-    onChainHumanDID !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+  // Check if On-Chain DID is valid (not zero)
+  const hasHumanDID = onChainHumanDID && onChainHumanDID !== ZERO_BYTES32;
 
-  // Get Agent DIDs from contract
+  // Get Sub-DIDs (Agent DIDs) from DualDIDRegistry
   const { data: agentDIDs, refetch: refetchAgentDIDs } = useReadContract({
-    address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-    abi: DID_REGISTRY_ABI,
-    functionName: 'getAgentsByHuman',
+    address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+    abi: DUAL_DID_REGISTRY_ABI,
+    functionName: 'getSubDIDsByOnChainDID',
     args: hasHumanDID ? [onChainHumanDID as `0x${string}`] : undefined,
     query: { enabled: hasHumanDID },
   });
@@ -166,45 +167,33 @@ export default function WalletPage() {
   };
 
   const handleRegisterHumanDID = async () => {
-    // Pass empty metadata string - contract will generate the DID
+    // Use DualDIDRegistry's registerOnChainDID (no args needed)
     writeRegisterDID({
-      address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-      abi: DID_REGISTRY_ABI,
-      functionName: 'registerHumanDID',
-      args: [''], // metadata string
+      address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+      abi: DUAL_DID_REGISTRY_ABI,
+      functionName: 'registerOnChainDID',
+      args: [],
       gas: BigInt(200000),
     });
   };
 
   const handleCreateAgentDID = () => {
-    if (!hasHumanDID || !onChainHumanDID) return;
-    // Pass agent name - contract will generate the DID
+    if (!hasHumanDID) return;
+    // Use DualDIDRegistry's registerSubDID (only needs name)
     const agentName = `Agent-${Date.now()}`;
     writeCreateAgent({
-      address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-      abi: DID_REGISTRY_ABI,
-      gas: BigInt(200000),
-      functionName: 'registerAgentDID',
-      args: [onChainHumanDID as `0x${string}`, agentName],
+      address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+      abi: DUAL_DID_REGISTRY_ABI,
+      gas: BigInt(500000),
+      functionName: 'registerSubDID',
+      args: [agentName],
     });
   };
 
   const handleCreateMandate = () => {
-    if (!selectedAgentForMandate) return;
-    // Set expiry to 1 year from now
-    const oneYearFromNow = BigInt(Math.floor(Date.now() / 1000) + 365 * 24 * 60 * 60);
-    writeMandate({
-      address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-      abi: DID_REGISTRY_ABI,
-      functionName: 'createMandate',
-      args: [
-        selectedAgentForMandate as `0x${string}`,
-        parseUnits(mandateDailyLimit, 6), // daily limit
-        parseUnits(mandateSingleLimit, 6), // single limit
-        oneYearFromNow, // expiry
-      ],
-      gas: BigInt(200000),
-    });
+    // Mandate functionality is not available in DualDIDRegistry
+    // This feature has been deprecated
+    console.warn('Mandate creation is not supported in DualDIDRegistry');
   };
 
   const handleApprove = () => {
@@ -847,7 +836,7 @@ export default function WalletPage() {
           <div className="grid gap-2 text-sm">
             {[
               { name: 'USD1', address: CONTRACT_ADDRESSES.USD1 },
-              { name: 'DID Registry', address: CONTRACT_ADDRESSES.DIDRegistry },
+              { name: 'DualDID Registry', address: CONTRACT_ADDRESSES.DualDIDRegistry },
               { name: 'Reputation', address: CONTRACT_ADDRESSES.Reputation },
               { name: 'Dynamic Pricing', address: CONTRACT_ADDRESSES.DynamicPricing },
               { name: 'Insurance Pool', address: CONTRACT_ADDRESSES.InsurancePool },

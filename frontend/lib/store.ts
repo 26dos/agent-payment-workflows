@@ -3,8 +3,12 @@ import { persist } from 'zustand/middleware';
 
 interface User {
   id: number;
-  wallet_address: string;
+  wallet_address: string | null;
+  email: string | null;
+  auth_type: 'wallet' | 'email';
+  email_verified: boolean;
   did: string | null;
+  display_id: string | null;
   human_score: number;
   metadata: string;
 }
@@ -56,6 +60,11 @@ interface AppState {
   user: User | null;
   isAuthenticated: boolean;
 
+  // Computed auth states
+  hasWallet: () => boolean;
+  canPerformBusinessOps: () => boolean;
+  isEmailUser: () => boolean;
+
   // Data
   agents: Agent[];
   tasks: Task[];
@@ -76,7 +85,7 @@ interface AppState {
 
 export const useAppStore = create<AppState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // Initial state
       token: null,
       user: null,
@@ -84,6 +93,19 @@ export const useAppStore = create<AppState>()(
       agents: [],
       tasks: [],
       dashboardStats: null,
+
+      // Computed auth states
+      hasWallet: () => {
+        const user = get().user;
+        return user?.wallet_address != null && user.wallet_address !== '';
+      },
+      canPerformBusinessOps: () => {
+        return get().hasWallet();
+      },
+      isEmailUser: () => {
+        const user = get().user;
+        return user?.auth_type === 'email';
+      },
 
       // Auth actions
       setAuth: (token, user) =>

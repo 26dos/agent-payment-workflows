@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
-import { taskApi } from '@/lib/api';
+import { useAccount, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -43,10 +42,16 @@ const statusIcons: Record<string, React.ReactNode> = {
   cancelled: <XCircle className="h-4 w-4" />,
 };
 
+const statusMap: Record<number, string> = {
+  0: 'created', 1: 'accepted', 2: 'completed',
+  3: 'disputed', 4: 'resolved', 5: 'cancelled', 6: 'expired',
+};
+
 export default function TaskDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { address } = useAccount();
+  const publicClient = usePublicClient();
   const [task, setTask] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [mounted, setMounted] = useState(false);
@@ -80,142 +85,109 @@ export default function TaskDetailPage() {
     setMounted(true);
   }, []);
 
+  // Load task directly from blockchain
   useEffect(() => {
-    const loadTask = async () => {
+    const loadTaskFromChain = async () => {
+      if (!publicClient || !params.id) return;
+
       try {
-        const data = await taskApi.getOne(Number(params.id));
+        const taskId = Number(params.id);
         
-        // If task has chain_task_id, sync status from blockchain
-        if (data?.chain_task_id) {
-          try {
-            const receipt = await fetch('https://data-seed-prebsc-1-s1.binance.org:8545', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                jsonrpc: '2.0',
-                method: 'eth_call',
-                params: [{
-                  to: CONTRACT_ADDRESSES.Escrow,
-                  data: `0x1d65e77e${data.chain_task_id.toString(16).padStart(64, '0')}`,
-                }, 'latest'],
-                id: 1,
-              }),
-            }).then(res => res.json());
-            
-            if (receipt?.result && receipt.result !== '0x') {
-              // Parse status from response
-              // Task struct: offset, requesterDID, providerDID, baseFee, finalAmount, protocolFee, complexity, status, ...
-              // Each field is 32 bytes = 64 hex chars. Status is at index 7 (0-indexed)
-              const result = receipt.result.slice(2); // Remove 0x
-              // status is at position 7: 7 * 64 = 448 characters offset
-              const statusHex = result.slice(448, 512);
-              const onChainStatus = parseInt(statusHex, 16);
-              console.log('Raw status hex:', statusHex, 'Parsed:', onChainStatus);
-              
-              // Map on-chain status to backend status
-              const statusMap: Record<number, string> = {
-                0: 'created',
-                1: 'accepted',
-                2: 'completed',
-                3: 'disputed',
-                4: 'resolved',
-                5: 'cancelled',
-              };
-              
-              const mappedStatus = statusMap[onChainStatus];
-              console.log('On-chain status:', onChainStatus, '->', mappedStatus, 'Backend status:', data.status);
-              
-              // If backend status differs, sync it
-              if (mappedStatus && mappedStatus !== data.status) {
-                console.log('Syncing status from blockchain:', mappedStatus);
-                if (mappedStatus === 'accepted') {
-                  await taskApi.accept(Number(params.id));
-                } else if (mappedStatus === 'completed') {
-                  await taskApi.complete(Number(params.id));
-                } else if (mappedStatus === 'disputed') {
-                  await taskApi.dispute(Number(params.id), { raised_by_did: '', reason: 'Synced from blockchain' });
-                } else if (mappedStatus === 'cancelled') {
-                  await taskApi.cancel(Number(params.id));
-                }
-                data.status = mappedStatus;
-              }
-            }
-          } catch (syncErr) {
-            console.error('Failed to sync on-chain status:', syncErr);
-          }
+        // First check if task exists
+        const taskCount = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+          abi: ESCROW_ABI,
+          functionName: 'taskCount',
+        }) as bigint;
+
+        if (taskId >= Number(taskCount)) {
+          setTask(null);
+          setIsLoading(false);
+          return;
         }
-        
-        setTask(data);
+
+        // Load task from chain
+        const chainTask = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+          abi: ESCROW_ABI,
+          functionName: 'tasks',
+          args: [BigInt(taskId)],
+        }) as any;
+
+        const baseFee = chainTask[2] || chainTask.baseFee;
+        const finalAmount = chainTask[3] || chainTask.finalAmount;
+        const statusNum = Number(chainTask[6] || 0);
+        const createdAt = Number(chainTask[7] || 0);
+        const acceptedAt = Number(chainTask[8] || 0);
+        const completedAt = Number(chainTask[9] || 0);
+        const metadata = chainTask[11] || '{}';
+
+        let parsedMeta: any = {};
+        try { parsedMeta = JSON.parse(metadata); } catch {}
+
+        setTask({
+          id: taskId,
+          chain_task_id: taskId,
+          requester_did: chainTask[0],
+          provider_did: chainTask[1],
+          base_amount: Number(baseFee) / 1e6,
+          final_amount: Number(finalAmount) / 1e6,
+          complexity: Number(chainTask[5] || 1),
+          status: statusMap[statusNum] || 'created',
+          created_at: createdAt > 0 ? new Date(createdAt * 1000).toISOString() : new Date().toISOString(),
+          accepted_at: acceptedAt > 0 ? new Date(acceptedAt * 1000).toISOString() : null,
+          completed_at: completedAt > 0 ? new Date(completedAt * 1000).toISOString() : null,
+          metadata: metadata,
+          ...parsedMeta,
+        });
       } catch (error) {
-        console.error('Failed to load task:', error);
+        console.error('Failed to load task from chain:', error);
+        setTask(null);
       } finally {
         setIsLoading(false);
       }
     };
-    if (params.id) loadTask();
-  }, [params.id]);
 
+    loadTaskFromChain();
+  }, [params.id, publicClient]);
+
+  // Reload task after successful transactions
   useEffect(() => {
-    const syncAndReload = async () => {
-      if (isAcceptSuccess && task?.id) {
-        // Sync accepted status to backend
-        try {
-          await taskApi.accept(Number(task.id));
-          console.log('Synced accepted status to backend');
-        } catch (err) {
-          console.error('Failed to sync accept status:', err);
-        }
-      }
-      
-      if (isCompleteSuccess && task?.id) {
-        // Sync completed status to backend
-        try {
-          await taskApi.complete(Number(task.id));
-          console.log('Synced completed status to backend');
-        } catch (err) {
-          console.error('Failed to sync complete status:', err);
-        }
-      }
-      
-      if (isDisputeSuccess && task?.id) {
-        // Sync disputed status to backend
-        try {
-          await taskApi.dispute(Number(task.id), { raised_by_did: '', reason: disputeReason });
-          console.log('Synced dispute status to backend');
-        } catch (err) {
-          console.error('Failed to sync dispute status:', err);
-        }
-      }
-      
-      // Reload task data
-      if (isAcceptSuccess || isCompleteSuccess || isDisputeSuccess) {
-        const data = await taskApi.getOne(Number(params.id));
-        setTask(data);
+    const reloadTask = async () => {
+      if (!publicClient || !params.id) return;
+      if (!isAcceptSuccess && !isCompleteSuccess && !isDisputeSuccess) return;
+
+      // Wait a bit for blockchain to update
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const taskId = Number(params.id);
+      try {
+        const chainTask = await publicClient.readContract({
+          address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+          abi: ESCROW_ABI,
+          functionName: 'tasks',
+          args: [BigInt(taskId)],
+        }) as any;
+
+        const statusNum = Number(chainTask[6] || 0);
+        setTask((prev: any) => prev ? { ...prev, status: statusMap[statusNum] || prev.status } : null);
+      } catch (err) {
+        console.error('Failed to reload task:', err);
       }
     };
-    syncAndReload();
-  }, [isAcceptSuccess, isCompleteSuccess, isDisputeSuccess]);
+
+    reloadTask();
+  }, [isAcceptSuccess, isCompleteSuccess, isDisputeSuccess, params.id, publicClient]);
 
   const handleAcceptTask = async () => {
-    if (!task?.chain_task_id) {
-      // Off-chain task: update via API
-      try {
-        await taskApi.accept(Number(params.id));
-        const data = await taskApi.getOne(Number(params.id));
-        setTask(data);
-      } catch (error) {
-        console.error('Failed to accept task:', error);
-      }
-      return;
-    }
+    if (task?.chain_task_id === undefined) return;
     
-    // On-chain task
     writeAccept({
       address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
       abi: ESCROW_ABI,
       functionName: 'acceptTask',
       args: [BigInt(task.chain_task_id)],
-      gas: BigInt(200000),
+      gas: BigInt(500000),
     });
   };
 
@@ -225,43 +197,20 @@ export default function TaskDetailPage() {
       return;
     }
     
-    if (!task?.chain_task_id) {
-      // Off-chain task: update via API
-      try {
-        await taskApi.dispute(Number(params.id), { raised_by_did: '', reason: disputeReason });
-        const data = await taskApi.getOne(Number(params.id));
-        setTask(data);
-        setDisputeReason('');
-      } catch (error) {
-        console.error('Failed to raise dispute:', error);
-      }
-      return;
-    }
+    if (task?.chain_task_id === undefined) return;
     
-    // On-chain task
     writeDispute({
       address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
       abi: ESCROW_ABI,
       functionName: 'raiseDispute',
       args: [BigInt(task.chain_task_id), disputeReason],
-      gas: BigInt(300000),
+      gas: BigInt(500000),
     });
   };
 
   const handleCompleteTask = async () => {
-    if (!task?.chain_task_id) {
-      // Off-chain task: update via API
-      try {
-        await taskApi.complete(Number(params.id));
-        const data = await taskApi.getOne(Number(params.id));
-        setTask(data);
-      } catch (error) {
-        console.error('Failed to complete task:', error);
-      }
-      return;
-    }
+    if (task?.chain_task_id === undefined) return;
     
-    // On-chain task - needs high gas for transfers + reputation update + dynamic pricing
     writeComplete({
       address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
       abi: ESCROW_ABI,

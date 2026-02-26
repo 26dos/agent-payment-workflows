@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useAccount, useReadContract } from 'wagmi';
+import { useEffect, useState, useCallback } from 'react';
+import { useAccount, useReadContract, usePublicClient } from 'wagmi';
 import { useAppStore } from '@/lib/store';
-import { taskApi } from '@/lib/api';
 import { TaskCard } from '@/components/dashboard/TaskCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,67 +10,132 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Plus, Loader2, ListTodo } from 'lucide-react';
 import Link from 'next/link';
 import { CONTRACT_ADDRESSES } from '@/lib/config';
-import { DID_REGISTRY_ABI } from '@/lib/contracts/abis';
+import { DUAL_DID_REGISTRY_ABI, ESCROW_ABI } from '@/lib/contracts/abis';
+
+const ZERO_BYTES32 = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
+const statusMap: Record<number, string> = {
+  0: 'created',
+  1: 'accepted',
+  2: 'completed',
+  3: 'disputed',
+  4: 'resolved',
+  5: 'cancelled',
+  6: 'expired',
+};
 
 export default function TasksPage() {
-  const { address } = useAccount();
-  const { user, tasks, setTasks } = useAppStore();
+  const { address: connectedWallet } = useAccount();
+  const { tasks, setTasks, user } = useAppStore();
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('requester');
+  const publicClient = usePublicClient();
 
-  // Get Human DID from chain
-  const { data: onChainHumanDID } = useReadContract({
-    address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-    abi: DID_REGISTRY_ABI,
-    functionName: 'addressToHumanDID',
-    args: address ? [address] : undefined,
-    query: { enabled: !!address },
+  // Use connected wallet or user's bound wallet address
+  const walletAddress = connectedWallet || (user?.wallet_address as `0x${string}` | undefined);
+
+  // Get On-Chain DID from DualDIDRegistry
+  const { data: onChainDID } = useReadContract({
+    address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+    abi: DUAL_DID_REGISTRY_ABI,
+    functionName: 'walletToOnChainDID',
+    args: walletAddress ? [walletAddress] : undefined,
+    query: { enabled: !!walletAddress },
   });
 
-  const hasHumanDID = onChainHumanDID && onChainHumanDID !== '0x0000000000000000000000000000000000000000000000000000000000000000';
+  const hasOnChainDID = onChainDID && onChainDID !== ZERO_BYTES32;
 
-  // Get Agent DIDs from chain
-  const { data: agentDIDs } = useReadContract({
-    address: CONTRACT_ADDRESSES.DIDRegistry as `0x${string}`,
-    abi: DID_REGISTRY_ABI,
-    functionName: 'getAgentsByHuman',
-    args: hasHumanDID ? [onChainHumanDID as `0x${string}`] : undefined,
-    query: { enabled: hasHumanDID },
+  // Get Sub-DIDs (Agent DIDs) from DualDIDRegistry
+  const { data: subDIDs } = useReadContract({
+    address: CONTRACT_ADDRESSES.DualDIDRegistry as `0x${string}`,
+    abi: DUAL_DID_REGISTRY_ABI,
+    functionName: 'getSubDIDsByOnChainDID',
+    args: hasOnChainDID ? [onChainDID as `0x${string}`] : undefined,
+    query: { enabled: hasOnChainDID },
   });
 
-  useEffect(() => {
-    const loadTasks = async () => {
-      // Use the first Agent DID to query tasks (since tasks are created with Agent DIDs)
-      const queryDID = agentDIDs && (agentDIDs as `0x${string}`[]).length > 0 
-        ? (agentDIDs as `0x${string}`[])[0] 
-        : user?.did;
-      
-      if (!queryDID) {
-        setIsLoading(false);
+  // Load tasks from chain
+  const loadTasksFromChain = useCallback(async () => {
+    if (!publicClient) return;
+
+    try {
+      // Get task count
+      const taskCount = await publicClient.readContract({
+        address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+        abi: ESCROW_ABI,
+        functionName: 'taskCount',
+      }) as bigint;
+
+      if (taskCount === BigInt(0)) {
+        setTasks([]);
         return;
       }
 
-      try {
-        // Query tasks for all agent DIDs
-        let allTasks: any[] = [];
-        if (agentDIDs && (agentDIDs as `0x${string}`[]).length > 0) {
-          for (const did of (agentDIDs as `0x${string}`[])) {
-            const data = await taskApi.getAll(did, activeTab as 'requester' | 'provider');
-            if (data) allTasks = [...allTasks, ...data];
-          }
-        } else if (user?.did) {
-          const data = await taskApi.getAll(user.did, activeTab as 'requester' | 'provider');
-          if (data) allTasks = data;
-        }
-        setTasks(allTasks);
-      } catch (error) {
-        console.error('Failed to load tasks:', error);
-      } finally {
-        setIsLoading(false);
+      // Collect all user Sub-DIDs from DualDIDRegistry
+      const userDIDs: Set<string> = new Set();
+      if (subDIDs) {
+        (subDIDs as `0x${string}`[]).forEach(did => userDIDs.add(did.toLowerCase()));
       }
+
+      // Load all tasks and filter by user DIDs
+      const loadedTasks: any[] = [];
+      for (let i = 0; i < Number(taskCount); i++) {
+        try {
+          const task = await publicClient.readContract({
+            address: CONTRACT_ADDRESSES.Escrow as `0x${string}`,
+            abi: ESCROW_ABI,
+            functionName: 'tasks',
+            args: [BigInt(i)],
+          }) as any;
+
+          const requesterDID = (task[0] || task.requesterDID || '').toLowerCase();
+          const providerDID = (task[1] || task.providerDID || '').toLowerCase();
+          
+          const isRequester = userDIDs.has(requesterDID);
+          const isProvider = userDIDs.has(providerDID);
+
+          if ((activeTab === 'requester' && isRequester) || (activeTab === 'provider' && isProvider)) {
+            // Parse task data
+            const baseFee = task[2] || task.baseFee;
+            const finalAmount = task[3] || task.finalAmount;
+            const statusNum = Number(task[6] || task.status || 0);
+            const metadata = task[11] || task.metadata || '{}';
+            
+            let parsedMeta = {};
+            try {
+              parsedMeta = JSON.parse(metadata);
+            } catch {}
+
+            loadedTasks.push({
+              id: i,
+              requester_did: task[0] || task.requesterDID,
+              provider_did: task[1] || task.providerDID,
+              base_amount: Number(baseFee) / 1e6,
+              final_amount: Number(finalAmount) / 1e6,
+              status: statusMap[statusNum] || 'created',
+              created_at: new Date(Number(task[7] || task.createdAt || 0) * 1000).toISOString(),
+              ...parsedMeta,
+            });
+          }
+        } catch (err) {
+          console.error(`Failed to load task ${i}:`, err);
+        }
+      }
+
+      setTasks(loadedTasks);
+    } catch (error) {
+      console.error('Failed to load tasks from chain:', error);
+    }
+  }, [publicClient, subDIDs, activeTab, setTasks]);
+
+  useEffect(() => {
+    const load = async () => {
+      setIsLoading(true);
+      await loadTasksFromChain();
+      setIsLoading(false);
     };
-    loadTasks();
-  }, [user, activeTab, setTasks, agentDIDs]);
+    load();
+  }, [loadTasksFromChain]);
 
   const filterByStatus = (status: string[]) =>
     tasks.filter((task) => status.includes(task.status));

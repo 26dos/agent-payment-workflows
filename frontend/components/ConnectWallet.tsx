@@ -6,7 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
 import { authApi } from '@/lib/api';
-import { Wallet, Loader2 } from 'lucide-react';
+import { Wallet, Loader2, Mail } from 'lucide-react';
+import { EmailAuth } from './EmailAuth';
+
+type AuthView = 'main' | 'email';
 
 export function ConnectWallet() {
   const { address } = useAccount();
@@ -18,6 +21,7 @@ export function ConnectWallet() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
+  const [authView, setAuthView] = useState<AuthView>('main');
 
   useEffect(() => {
     setMounted(true);
@@ -25,10 +29,10 @@ export function ConnectWallet() {
 
   // Auto-login when wallet connected
   useEffect(() => {
-    if (address && !isAuthenticated && !isLoading && mounted) {
+    if (address && !isAuthenticated && !isLoading && mounted && authView === 'main') {
       handleLogin();
     }
-  }, [address, isAuthenticated, isLoading, mounted]);
+  }, [address, isAuthenticated, isLoading, mounted, authView]);
 
   const handleConnect = async (connector: any) => {
     setIsConnecting(true);
@@ -85,6 +89,15 @@ export function ConnectWallet() {
     );
   }
 
+  // Email auth view
+  if (authView === 'email') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
+        <EmailAuth onBack={() => setAuthView('main')} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <Card className="w-full max-w-md">
@@ -94,7 +107,7 @@ export function ConnectWallet() {
           </div>
           <CardTitle className="text-2xl">Welcome to ClawPay</CardTitle>
           <CardDescription>
-            Connect your wallet to access the Agentic Settlement Protocol
+            Connect your wallet or use email to get started
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -123,28 +136,48 @@ export function ConnectWallet() {
               )}
             </Button>
           ) : (
-            <div className="space-y-3">
-              {connectors.map((connector) => (
-                <Button
-                  key={connector.uid}
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleConnect(connector)}
-                  disabled={isConnecting}
-                >
-                  {isConnecting ? (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : (
-                    <Wallet className="mr-2 h-4 w-4" />
-                  )}
-                  {connector.name}
-                </Button>
-              ))}
-            </div>
+            <>
+              <div className="space-y-3">
+                {connectors.map((connector) => (
+                  <Button
+                    key={connector.uid}
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => handleConnect(connector)}
+                    disabled={isConnecting}
+                  >
+                    {isConnecting ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Wallet className="mr-2 h-4 w-4" />
+                    )}
+                    {connector.name}
+                  </Button>
+                ))}
+              </div>
+
+              <div className="relative my-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">or</span>
+                </div>
+              </div>
+
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => setAuthView('email')}
+              >
+                <Mail className="mr-2 h-4 w-4" />
+                Continue with Email
+              </Button>
+            </>
           )}
 
           <p className="text-center text-xs text-muted-foreground">
-            By connecting, you agree to sign a message to verify your wallet ownership.
+            Wallet provides full access. Email users can create DID but need wallet for transactions.
           </p>
         </CardContent>
       </Card>
