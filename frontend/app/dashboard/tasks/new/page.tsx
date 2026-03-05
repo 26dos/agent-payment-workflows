@@ -390,7 +390,7 @@ export default function CreateTaskPage() {
                   {(approveHash || createHash) && (
                     <div className="text-xs text-muted-foreground">
                       <a 
-                        href={`https://testnet.bscscan.com/tx/${createHash || approveHash}`}
+                        href={`https://bscscan.com/tx/${createHash || approveHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 hover:text-primary"

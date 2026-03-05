@@ -214,7 +214,7 @@ export default function Home() {
               <span className="font-semibold text-gray-900">ClawPay</span>
             </div>
             <p className="text-sm text-gray-500">
-              Agentic Settlement Protocol on BSC Testnet
+              Agentic Settlement Protocol on BSC Mainnet
             </p>
           </div>
         </div>

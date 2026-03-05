@@ -368,7 +368,7 @@ export default function AgentDetailPage() {
                     <p className="text-xs text-center text-muted-foreground">
                       Tx:{' '}
                       <a 
-                        href={`https://testnet.bscscan.com/tx/${createSubDIDTxHash}`} 
+                        href={`https://bscscan.com/tx/${createSubDIDTxHash}`} 
                         target="_blank" 
                         rel="noopener noreferrer" 
                         className="text-blue-500 hover:underline"

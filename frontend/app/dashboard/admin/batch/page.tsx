@@ -536,7 +536,7 @@ export default function BatchChainPage() {
                   <h4 className="font-medium text-sm mb-2">Recent Transaction</h4>
                   <div className="text-xs">
                     <a 
-                      href={`https://testnet.bscscan.com/tx/${batchHash}`}
+                      href={`https://bscscan.com/tx/${batchHash}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-green-600 hover:underline"

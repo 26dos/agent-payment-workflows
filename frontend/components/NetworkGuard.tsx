@@ -1,7 +1,7 @@
 'use client';
 
 import { useAccount, useChainId, useSwitchChain } from 'wagmi';
-import { bscTestnet } from 'wagmi/chains';
+import { bsc } from 'wagmi/chains';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangle, Loader2 } from 'lucide-react';
@@ -27,7 +27,7 @@ export function NetworkGuard({ children }: { children: React.ReactNode }) {
   }
 
   // If on wrong network, show switch prompt
-  if (chainId !== bscTestnet.id) {
+  if (chainId !== bsc.id) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
         <div className="mx-4 max-w-md rounded-lg border bg-card p-6 shadow-lg">
@@ -36,7 +36,7 @@ export function NetworkGuard({ children }: { children: React.ReactNode }) {
             <h2 className="text-lg font-semibold">Wrong Network</h2>
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            ClawPay is deployed on <strong>BSC Testnet</strong>. Please switch your wallet to the correct network.
+            ClawPay is deployed on <strong>BSC Mainnet</strong>. Please switch your wallet to the correct network.
           </p>
           <div className="mt-4 rounded-lg bg-muted p-3 text-sm">
             <div className="flex justify-between">
@@ -45,12 +45,12 @@ export function NetworkGuard({ children }: { children: React.ReactNode }) {
             </div>
             <div className="flex justify-between mt-1">
               <span className="text-muted-foreground">Required:</span>
-              <span className="text-green-600">BSC Testnet ({bscTestnet.id})</span>
+              <span className="text-green-600">BSC Mainnet ({bsc.id})</span>
             </div>
           </div>
           <Button 
             className="mt-4 w-full" 
-            onClick={() => switchChain({ chainId: bscTestnet.id })}
+            onClick={() => switchChain({ chainId: bsc.id })}
             disabled={isPending}
           >
             {isPending ? (
@@ -59,7 +59,7 @@ export function NetworkGuard({ children }: { children: React.ReactNode }) {
                 Switching...
               </>
             ) : (
-              'Switch to BSC Testnet'
+              'Switch to BSC Mainnet'
             )}
           </Button>
           <p className="mt-3 text-xs text-muted-foreground text-center">

@@ -450,7 +450,7 @@ export default function DIDPage() {
                     </Button>
                     {onChainTxHash && (
                       <p className="text-xs text-muted-foreground mt-2">
-                        Tx: <a href={`https://testnet.bscscan.com/tx/${onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                        Tx: <a href={`https://bscscan.com/tx/${onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
                           {onChainTxHash.slice(0, 10)}...{onChainTxHash.slice(-8)}
                           <ExternalLink className="inline h-3 w-3 ml-1" />
                         </a>
@@ -525,7 +525,7 @@ export default function DIDPage() {
                   
                   {onChainTxHash && (
                     <p className="text-xs text-center text-muted-foreground">
-                      Tx: <a href={`https://testnet.bscscan.com/tx/${onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                      Tx: <a href={`https://bscscan.com/tx/${onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
                         {onChainTxHash.slice(0, 10)}...{onChainTxHash.slice(-8)}
                         <ExternalLink className="inline h-3 w-3 ml-1" />
                       </a>
@@ -594,7 +594,7 @@ export default function DIDPage() {
                 </Button>
                 {onChainTxHash && (
                   <p className="text-xs text-muted-foreground">
-                    Tx: <a href={`https://testnet.bscscan.com/tx/${onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                    Tx: <a href={`https://bscscan.com/tx/${onChainTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
                       {onChainTxHash.slice(0, 10)}...{onChainTxHash.slice(-8)}
                       <ExternalLink className="inline h-3 w-3 ml-1" />
                     </a>
@@ -773,7 +773,7 @@ export default function DIDPage() {
                     )}
                     {auctionTxHash && (
                       <p className="text-xs text-center text-muted-foreground">
-                        Tx: <a href={`https://testnet.bscscan.com/tx/${auctionTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                        Tx: <a href={`https://bscscan.com/tx/${auctionTxHash}`} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
                           {auctionTxHash.slice(0, 10)}...{auctionTxHash.slice(-8)}
                           <ExternalLink className="inline h-3 w-3 ml-1" />
                         </a>

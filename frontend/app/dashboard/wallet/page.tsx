@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAccount, useBalance, useWriteContract, useWaitForTransactionReceipt, useReadContract, useSwitchChain } from 'wagmi';
 import { parseUnits, formatUnits } from 'viem';
-import { bscTestnet } from 'wagmi/chains';
+import { bsc } from 'wagmi/chains';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,7 +44,7 @@ export default function WalletPage() {
   const [mounted, setMounted] = useState(false);
   const [approveAmount, setApproveAmount] = useState('100000');
 
-  const isWrongNetwork = chainId !== bscTestnet.id;
+  const isWrongNetwork = chainId !== bsc.id;
 
   useEffect(() => {
     setMounted(true);
@@ -277,11 +277,11 @@ export default function WalletPage() {
               <AlertTriangle className="h-5 w-5" />
               <div>
                 <p className="font-medium">Wrong Network Detected</p>
-                <p className="text-sm">Please switch to BSC Testnet (Chain ID: 97) to use ClawPay</p>
+                <p className="text-sm">Please switch to BSC Mainnet (Chain ID: 56) to use ClawPay</p>
               </div>
             </div>
             <Button 
-              onClick={() => switchChain({ chainId: bscTestnet.id })}
+              onClick={() => switchChain({ chainId: bsc.id })}
               disabled={isSwitching}
               size="sm"
             >
@@ -808,13 +808,13 @@ export default function WalletPage() {
             </div>
             <div className="rounded-lg bg-muted p-4">
               <p className="text-sm text-muted-foreground">Network</p>
-              <p className="text-xl font-bold">BSC Testnet</p>
+              <p className="text-xl font-bold">BSC Mainnet</p>
             </div>
             <div className="rounded-lg bg-muted p-4 flex flex-col justify-between">
               <p className="text-sm text-muted-foreground">Need BNB?</p>
               <Button variant="outline" size="sm" className="mt-2" asChild>
                 <a
-                  href="https://testnet.bnbchain.org/faucet-smart"
+                  href="https://www.bnbchain.org/"
                   target="_blank"
                   rel="noopener noreferrer"
                 >
@@ -830,7 +830,7 @@ export default function WalletPage() {
       <Card>
         <CardHeader>
           <CardTitle>Contract Addresses</CardTitle>
-          <CardDescription>Deployed on BSC Testnet</CardDescription>
+          <CardDescription>Deployed on BSC Mainnet</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid gap-2 text-sm">
@@ -845,7 +845,7 @@ export default function WalletPage() {
               <div key={contract.name} className="flex items-center justify-between py-2 border-b last:border-0">
                 <span className="text-muted-foreground">{contract.name}</span>
                 <a
-                  href={`https://testnet.bscscan.com/address/${contract.address}`}
+                  href={`https://bscscan.com/address/${contract.address}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-mono text-xs text-primary hover:underline flex items-center gap-1"
