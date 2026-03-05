@@ -809,7 +809,6 @@ export default function DIDPage() {
                     </div>
                   </div>
                 </div>
-                </div>
 
                 {isPremiumLength ? (
                   <div className="space-y-2">
