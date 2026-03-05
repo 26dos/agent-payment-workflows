@@ -148,17 +148,15 @@ export default function DIDPage() {
       setRegistering(true);
       setError(null);
 
-      // For email users without wallet, only create off-chain DID
-      // For wallet users, create both on-chain and off-chain DID
-      if (isEmailUser() && !hasWallet()) {
-        await didApi.registerOffChainDID(displayId);
-        // Reload DID info
-        await loadDIDInfo();
-        setSuccess('Display ID created successfully! Connect a wallet to create your On-Chain DID.');
+      // Always register off-chain DID first (Display ID)
+      // On-chain DID is created separately via blockchain transaction
+      await didApi.registerOffChainDID(displayId);
+      await loadDIDInfo();
+      
+      if (isConnected) {
+        setSuccess('Display ID created successfully! You can now create your On-Chain DID to complete the dual identity setup.');
       } else {
-        const result = await didApi.completeRegistration(displayId);
-        setDIDInfo(result);
-        setSuccess('DID registration successful!');
+        setSuccess('Display ID created successfully! Connect a wallet to create your On-Chain DID.');
       }
       
       setDisplayId('');

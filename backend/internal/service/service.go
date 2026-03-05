@@ -985,18 +985,6 @@ func (s *Service) RegisterOffChainDID(ctx context.Context, walletAddress, displa
 		return nil, fmt.Errorf("user already has a Human DID: %s", *user.DisplayID)
 	}
 
-	// Get on-chain DID
-	onChainDID, err := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
-	if err != nil {
-		return nil, err
-	}
-	if onChainDID == nil {
-		return nil, fmt.Errorf("no on-chain DID found, please register first")
-	}
-	if onChainDID.LinkedOffChainID != nil {
-		return nil, fmt.Errorf("already has an off-chain DID linked")
-	}
-
 	// Validate display ID format
 	valid, _, reason := s.ValidateDisplayID(ctx, displayID)
 	if !valid {
@@ -1007,24 +995,34 @@ func (s *Service) RegisterOffChainDID(ctx context.Context, walletAddress, displa
 	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
 
 	offChainDID := &model.OffChainDID{
-		DisplayID:             displayID,
-		DIDHash:               didHash,
-		Tier:                  model.DIDTierNormal,
-		IsSystemGenerated:     false,
-		CurrentOwnerOnChainID: &onChainDID.DIDHash,
-		Active:                true,
-		CreatedAt:             time.Now(),
-		UpdatedAt:             time.Now(),
+		DisplayID:         displayID,
+		DIDHash:           didHash,
+		Tier:              model.DIDTierNormal,
+		IsSystemGenerated: false,
+		Active:            true,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+
+	// Check if user has on-chain DID to link
+	onChainDID, _ := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
+	if onChainDID != nil {
+		if onChainDID.LinkedOffChainID != nil {
+			return nil, fmt.Errorf("already has an off-chain DID linked to on-chain DID")
+		}
+		offChainDID.CurrentOwnerOnChainID = &onChainDID.DIDHash
 	}
 
 	if err := s.repo.CreateOffChainDID(ctx, offChainDID); err != nil {
 		return nil, err
 	}
 
-	// Link to on-chain DID
-	onChainDID.LinkedOffChainID = &offChainDID.DIDHash
-	if err := s.repo.UpdateOnChainDID(ctx, onChainDID); err != nil {
-		return nil, err
+	// Link to on-chain DID if exists
+	if onChainDID != nil {
+		onChainDID.LinkedOffChainID = &offChainDID.DIDHash
+		if err := s.repo.UpdateOnChainDID(ctx, onChainDID); err != nil {
+			return nil, err
+		}
 	}
 
 	// Update user's display_id to enforce one DID per user
@@ -1078,6 +1076,18 @@ func (s *Service) GetUserDIDInfo(ctx context.Context, walletAddress string) (*mo
 				return nil, err
 			}
 			if offChainDID != nil {
+				info.OffChainDID = offChainDID
+				info.HasOffChain = true
+			}
+		}
+	}
+
+	// Also check user's display_id field for off-chain DID (in case not linked to on-chain)
+	if !info.HasOffChain {
+		user, err := s.repo.GetUserByWallet(ctx, walletAddress)
+		if err == nil && user != nil && user.DisplayID != nil && *user.DisplayID != "" {
+			offChainDID, err := s.repo.GetOffChainDIDByDisplayID(ctx, *user.DisplayID)
+			if err == nil && offChainDID != nil {
 				info.OffChainDID = offChainDID
 				info.HasOffChain = true
 			}
