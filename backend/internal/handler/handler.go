@@ -1575,11 +1575,13 @@ func (h *Handler) ValidateDisplayID(c *gin.Context) {
 	}
 
 	valid, available, reason := h.svc.ValidateDisplayID(c.Request.Context(), displayID)
+	isPremium := h.svc.IsPremiumDisplayID(displayID)
 
 	c.JSON(http.StatusOK, gin.H{
-		"valid":     valid,
-		"available": available,
-		"reason":    reason,
+		"valid":      valid,
+		"available":  available,
+		"reason":     reason,
+		"is_premium": isPremium,
 	})
 }
 

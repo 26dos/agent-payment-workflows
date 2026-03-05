@@ -1171,17 +1171,36 @@ func (s *Service) RegisterOffChainDIDByEmail(ctx context.Context, email, display
 	return offChainDID, nil
 }
 
+// isRepeatingPattern checks if a string consists of all the same character (豹子号)
+func isRepeatingPattern(s string) bool {
+	if len(s) < 2 {
+		return false
+	}
+	firstChar := s[0]
+	for i := 1; i < len(s); i++ {
+		if s[i] != firstChar {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateDisplayID validates a display ID format and availability
+// Returns: (valid, available, reason)
+// Note: Currently only 4+ character IDs are allowed (1-3 chars not yet open)
+// 4 chars OR 5+ repeating patterns (豹子号) require auction
 func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool, bool, string) {
-	// New rules: alphanumeric only, 1-32 characters
-	// 5+ chars = free registration, 1-4 chars = auction
-	
 	// Check length
 	if len(displayID) == 0 {
 		return false, false, "Display ID cannot be empty"
 	}
 	if len(displayID) > 32 {
 		return false, false, "Display ID must be 32 characters or less"
+	}
+	
+	// Currently 1-3 character IDs are not open for registration
+	if len(displayID) < 4 {
+		return false, false, "Display IDs with 1-3 characters are not yet available. Please use 4 or more characters."
 	}
 
 	// Convert to uppercase for validation
@@ -1207,6 +1226,25 @@ func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool
 	}
 
 	return true, true, ""
+}
+
+// IsPremiumDisplayID checks if a display ID requires auction (premium)
+// Premium IDs: 4 characters OR 5+ repeating patterns (豹子号) like 11111, AAAAA
+// Note: 1-3 chars are blocked at validation level
+func (s *Service) IsPremiumDisplayID(displayID string) bool {
+	upperDisplayID := strings.ToUpper(displayID)
+	
+	// 4 characters require auction
+	if len(upperDisplayID) == 4 {
+		return true
+	}
+	
+	// Repeating patterns (豹子号) require auction regardless of length
+	if len(upperDisplayID) >= 5 && isRepeatingPattern(upperDisplayID) {
+		return true
+	}
+	
+	return false
 }
 
 // GetOffChainDIDByDisplayID returns an off-chain DID by display ID

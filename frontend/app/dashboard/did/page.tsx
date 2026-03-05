@@ -10,7 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, CheckCircle, XCircle, User, Link2, Shield, Crown, AlertTriangle, Wallet, ExternalLink, Gavel, Clock, DollarSign } from 'lucide-react';
+import { Loader2, CheckCircle, XCircle, User, Link2, Shield, Crown, AlertTriangle, Wallet, ExternalLink, Gavel, Clock, DollarSign, Info } from 'lucide-react';
 import { didApi, auctionApi, UserDIDInfo } from '@/lib/api';
 import { DID_TIER_NAMES, CONTRACT_ADDRESSES } from '@/lib/config';
 import { useCompleteRegistration, useRegisterOnChainDID, useWalletOnChainDID, useCreateShortDisplayIdAuction, useAuctionByDisplayId } from '@/lib/contracts/hooks';
@@ -33,16 +33,32 @@ export default function DIDPage() {
 
   const [auctionCreating, setAuctionCreating] = useState(false);
 
-  const isPremiumLength = displayId.length > 0 && displayId.length < 5;
-  const getAuctionPrice = (length: number): number => {
+  // Check if display ID is a repeating pattern (豹子号) like 11111, AAAAA
+  const isRepeatingPattern = (str: string): boolean => {
+    if (str.length < 2) return false;
+    const firstChar = str[0].toUpperCase();
+    return str.toUpperCase().split('').every(c => c === firstChar);
+  };
+
+  // Check if display ID length is too short (1-3 chars not yet open)
+  const isTooShort = displayId.length > 0 && displayId.length < 4;
+
+  // Premium IDs: 4 characters OR 5+ repeating patterns (豹子号)
+  // Note: 1-3 chars are blocked
+  const isPremiumLength = displayId.length === 4 || (displayId.length >= 5 && isRepeatingPattern(displayId));
+  
+  const getAuctionPrice = (length: number, isRepeating: boolean = false): number => {
+    // Repeating patterns (豹子号) use the same pricing as 4-char IDs
+    if (isRepeating && length >= 5) return 10; // 5+ char repeating patterns = 10 USD1
     if (length >= 5) return 0;
     if (length === 4) return 10;
+    // 1-3 chars not open, but keep pricing for reference
     if (length === 3) return 100;
     if (length === 2) return 1000;
     return 10000;
   };
-  const getAuctionPriceWei = (length: number): bigint => {
-    return BigInt(getAuctionPrice(length)) * BigInt(1e6);
+  const getAuctionPriceWei = (length: number, isRepeating: boolean = false): bigint => {
+    return BigInt(getAuctionPrice(length, isRepeating)) * BigInt(1e6);
   };
 
   const { completeRegistration, isPending, isConfirming, isSuccess } = useCompleteRegistration();
@@ -202,7 +218,7 @@ export default function DIDPage() {
     const syncAndRedirect = async () => {
       if (isAuctionSuccess && auctionTxHash && displayId && publicClient) {
         const createdDisplayId = displayId;
-        const auctionPrice = getAuctionPrice(createdDisplayId.length);
+        const auctionPrice = getAuctionPrice(createdDisplayId.length, isRepeatingPattern(createdDisplayId));
         
         try {
           // Get transaction receipt to extract chainAuctionId from AuctionCreated event
@@ -689,48 +705,110 @@ export default function DIDPage() {
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Letters (A-Z) and digits (0-9) only. 5+ characters = free, 1-4 characters = auction
-                  </p>
-                  {validation && !validation.valid && (
-                    <p className="text-xs text-red-500">{validation.reason}</p>
+                  {/* Real-time status hints */}
+                  {displayId.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Enter your desired Display ID (letters A-Z and digits 0-9)
+                    </p>
+                  )}
+                  {isTooShort && (
+                    <Alert className="border-red-200 bg-red-50 py-2">
+                      <XCircle className="h-4 w-4 text-red-600" />
+                      <AlertDescription className="text-red-700 text-xs">
+                        <strong>Not Available:</strong> 1-3 character IDs are reserved and not yet open for registration. Please enter at least 4 characters.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {!isTooShort && displayId.length >= 4 && displayId.length < 5 && !isPremiumLength && (
+                    <p className="text-xs text-muted-foreground">Checking availability...</p>
+                  )}
+                  {validation && !validation.valid && !isTooShort && (
+                    <Alert className="border-red-200 bg-red-50 py-2">
+                      <XCircle className="h-4 w-4 text-red-600" />
+                      <AlertDescription className="text-red-700 text-xs">
+                        <strong>Invalid:</strong> {validation.reason}
+                      </AlertDescription>
+                    </Alert>
                   )}
                   {validation && validation.valid && !validation.available && (
-                    <p className="text-xs text-red-500">{validation.reason}</p>
+                    <Alert className="border-red-200 bg-red-50 py-2">
+                      <XCircle className="h-4 w-4 text-red-600" />
+                      <AlertDescription className="text-red-700 text-xs">
+                        <strong>Unavailable:</strong> {validation.reason}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {validation?.valid && validation?.available && !isPremiumLength && displayId.length >= 5 && (
+                    <Alert className="border-green-200 bg-green-50 py-2">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-green-700 text-xs">
+                        <strong>Available for Free Registration!</strong> This Display ID can be registered immediately at no cost.
+                      </AlertDescription>
+                    </Alert>
                   )}
                 </div>
 
                 {isPremiumLength && validation?.valid && validation?.available && (
                   <Alert className="border-amber-200 bg-amber-50">
                     <Crown className="h-4 w-4 text-amber-600" />
-                    <AlertTitle className="text-amber-800">Premium Short ID</AlertTitle>
+                    <AlertTitle className="text-amber-800">Premium ID - Auction Required</AlertTitle>
                     <AlertDescription className="text-amber-700">
-                      Short IDs ({displayId.length} characters) require an auction.
-                      <br />
-                      <span className="font-semibold">Starting Price: {getAuctionPrice(displayId.length)} USD1</span>
-                      <br />
-                      Duration: 30 minutes | Highest bidder wins
+                      {displayId.length === 4 ? (
+                        <><strong>4-character IDs</strong> are premium and require an auction to acquire.</>
+                      ) : isRepeatingPattern(displayId) ? (
+                        <><strong>Repeating pattern IDs</strong> (like "{displayId}") are premium and require an auction.</>
+                      ) : null}
+                      <div className="mt-2 p-2 bg-amber-100 rounded text-sm">
+                        <div className="flex justify-between">
+                          <span>Starting Price:</span>
+                          <span className="font-bold">{getAuctionPrice(displayId.length, isRepeatingPattern(displayId))} USD1</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Duration:</span>
+                          <span className="font-semibold">30 minutes</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Winner:</span>
+                          <span>Highest bidder</span>
+                        </div>
+                      </div>
                     </AlertDescription>
                   </Alert>
                 )}
 
-                <div className="bg-muted p-4 rounded-lg space-y-2">
-                  <h4 className="font-semibold text-sm">Display ID Rules</h4>
-                  <ul className="text-xs text-muted-foreground space-y-1">
-                    <li>• Characters: Uppercase letters (A-Z) and digits (0-9)</li>
-                    <li>• Length: 1-32 characters</li>
-                    <li>• 5+ characters: Free registration</li>
-                    <li>• 1-4 characters: Requires 30-min auction</li>
-                  </ul>
-                  <div className="mt-2 pt-2 border-t border-muted-foreground/20">
-                    <p className="text-xs font-medium">Auction Starting Prices:</p>
-                    <div className="grid grid-cols-4 gap-1 mt-1 text-xs text-muted-foreground">
-                      <span>4 chars: 10 USD1</span>
-                      <span>3 chars: 100 USD1</span>
-                      <span>2 chars: 1000 USD1</span>
-                      <span>1 char: 10000 USD1</span>
+                <div className="bg-muted p-4 rounded-lg space-y-3">
+                  <h4 className="font-semibold text-sm flex items-center gap-2">
+                    <Info className="h-4 w-4" />
+                    Display ID Registration Rules
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="text-xs">
+                      <p className="font-medium text-foreground mb-1">Allowed Characters:</p>
+                      <p className="text-muted-foreground">Uppercase letters (A-Z) and digits (0-9) only</p>
+                    </div>
+                    <div className="text-xs">
+                      <p className="font-medium text-foreground mb-1">Registration Types:</p>
+                      <div className="grid gap-1 text-muted-foreground">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          <span><strong>5+ characters:</strong> Free instant registration</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                          <span><strong>4 characters:</strong> Auction required (10 USD1 starting price)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                          <span><strong>Repeating patterns</strong> (11111, AAAAA): Auction required (10 USD1)</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-red-500"></span>
+                          <span><strong>1-3 characters:</strong> Not yet available (coming soon)</span>
+                        </div>
+                      </div>
                     </div>
                   </div>
+                </div>
                 </div>
 
                 {isPremiumLength ? (
@@ -764,7 +842,7 @@ export default function DIDPage() {
                         ) : (
                           <>
                             <Gavel className="mr-2 h-4 w-4" />
-                            Start Auction ({getAuctionPrice(displayId.length)} USD1)
+                            Start Auction ({getAuctionPrice(displayId.length, isRepeatingPattern(displayId))} USD1)
                           </>
                         )}
                       </Button>

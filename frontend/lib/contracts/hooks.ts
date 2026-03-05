@@ -946,6 +946,22 @@ export function useFinalizeShortDisplayIdAuction() {
   return { finalizeAuction, hash, isPending, isConfirming, isSuccess, error };
 }
 
+// Check if display ID is a repeating pattern (豹子号)
+function isRepeatingPattern(str: string): boolean {
+  if (str.length < 2) return false;
+  const firstChar = str[0].toUpperCase();
+  return str.toUpperCase().split('').every(c => c === firstChar);
+}
+
+// Check if display ID is premium (requires auction)
+// Premium IDs: 4 characters OR 5+ repeating patterns
+// Note: 1-3 chars are blocked at validation level
+function isPremiumDisplayId(displayId: string): boolean {
+  if (displayId.length === 4) return true;
+  if (displayId.length >= 5 && isRepeatingPattern(displayId)) return true;
+  return false;
+}
+
 // Get auction by display ID
 export function useAuctionByDisplayId(displayId?: string) {
   return useReadContract({
@@ -954,7 +970,7 @@ export function useAuctionByDisplayId(displayId?: string) {
     functionName: 'getAuctionByDisplayId',
     args: displayId ? [displayId] : undefined,
     query: {
-      enabled: !!displayId && displayId.length > 0 && displayId.length < 5,
+      enabled: !!displayId && isPremiumDisplayId(displayId),
     },
   });
 }
