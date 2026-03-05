@@ -55,7 +55,7 @@ export default function ReputationPage() {
       try {
         const scores: number[] = [];
         for (const agentDID of agentDIDs as `0x${string}`[]) {
-          const response = await fetch('https://data-seed-prebsc-1-s1.binance.org:8545', {
+          const response = await fetch('https://bsc-dataseed.binance.org/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
