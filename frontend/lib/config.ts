@@ -1,5 +1,5 @@
 import { http, createConfig } from 'wagmi';
-import { bscTestnet } from 'wagmi/chains';
+import { bsc } from 'wagmi/chains';
 
 // Contract addresses - update after deployment
 export const CONTRACT_ADDRESSES = {
@@ -53,13 +53,13 @@ export const AUCTION_STATUS_NAMES: Record<number, string> = {
 // API base URL
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api/v1';
 
-// Wagmi config - simplified for demo
+// Wagmi config - BSC Mainnet
 export const wagmiConfig = createConfig({
-  chains: [bscTestnet],
+  chains: [bsc],
   transports: {
-    [bscTestnet.id]: http('https://data-seed-prebsc-1-s1.binance.org:8545'),
+    [bsc.id]: http('https://bsc-dataseed.binance.org/'),
   },
 });
 
 // Chain config
-export const defaultChain = bscTestnet;
+export const defaultChain = bsc;

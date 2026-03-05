@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./DualDIDRegistry.sol";
 import "./ReputationScore.sol";
 import "./DynamicPricing.sol";
@@ -16,7 +17,7 @@ import "./TaskSpecification.sol";
  * @title ClawPayEscrow
  * @dev Core escrow contract for ClawPay - uses DualDIDRegistry only
  */
-contract ClawPayEscrow is Ownable, ReentrancyGuard {
+contract ClawPayEscrow is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ============ Enums ============
@@ -75,8 +76,8 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
     address public protocolFeeRecipient;
     uint256 public premiumToPoolPercent = 20;
     uint256 public maxBatchSize = 10;
-    uint256 public disputeTimeout = 5 minutes;
-    uint256 public completionTimeout = 5 minutes;
+    uint256 public disputeTimeout = 7 days;
+    uint256 public completionTimeout = 7 days;
     address public arbitrationWallet;
 
     // ============ Events ============
@@ -185,6 +186,16 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         insurancePool = InsurancePool(_insurance);
     }
 
+    // ============ Emergency Functions ============
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
     // ============ Task Creation ============
 
     function createOpenTask(
@@ -192,7 +203,7 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         uint256 baseFee,
         uint8 complexity,
         string calldata metadata
-    ) external nonReentrant returns (uint256 taskId) {
+    ) external nonReentrant whenNotPaused returns (uint256 taskId) {
         address owner = _getSubDIDOwner(requesterDID);
         require(owner == msg.sender, "Escrow: not owner");
 
@@ -232,7 +243,7 @@ contract ClawPayEscrow is Ownable, ReentrancyGuard {
         uint256 completionDeadline,
         uint256 minReputationScore,
         string calldata metadataIPFS
-    ) external nonReentrant returns (uint256 taskId) {
+    ) external nonReentrant whenNotPaused returns (uint256 taskId) {
         require(address(taskSpecification) != address(0), "Escrow: no spec");
 
         address owner = _getSubDIDOwner(requesterDID);

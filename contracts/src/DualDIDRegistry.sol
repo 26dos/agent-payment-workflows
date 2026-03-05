@@ -87,7 +87,7 @@ contract DualDIDRegistry is Ownable, ReentrancyGuard {
     bytes1 private constant VOWEL_O = 'O';
     bytes1 private constant VOWEL_U = 'U';
 
-    uint256 public constant TRANSFER_FEE_BPS = 500; // 5%
+    uint256 public transferFeeBps = 500; // 5% default, configurable
     uint256 public constant BPS_DENOMINATOR = 10000;
 
     // ============ State Variables ============
@@ -218,6 +218,11 @@ contract DualDIDRegistry is Ownable, ReentrancyGuard {
         require(_treasury != address(0), "DualDID: invalid treasury");
         treasury = _treasury;
         emit TreasuryUpdated(_treasury);
+    }
+
+    function setTransferFeeBps(uint256 _feeBps) external onlyOwner {
+        require(_feeBps <= 1000, "DualDID: max 10%");
+        transferFeeBps = _feeBps;
     }
 
     function blockDisplayId(string calldata displayId, bool blocked) external onlyOwner {
@@ -576,7 +581,7 @@ contract DualDIDRegistry is Ownable, ReentrancyGuard {
         bytes32 sellerOnChainDIDHash = offChainDID.currentOwnerOnChainDID;
 
         // Calculate fees
-        uint256 fee = (listing.price * TRANSFER_FEE_BPS) / BPS_DENOMINATOR;
+        uint256 fee = (listing.price * transferFeeBps) / BPS_DENOMINATOR;
         uint256 sellerAmount = listing.price - fee;
 
         // Transfer payment

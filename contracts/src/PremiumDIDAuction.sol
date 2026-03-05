@@ -5,6 +5,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "./DualDIDRegistry.sol";
 
 /**
@@ -23,7 +24,7 @@ import "./DualDIDRegistry.sol";
  * - 10% Ecosystem Incentive Pool
  * - 5% Operations
  */
-contract PremiumDIDAuction is Ownable, ReentrancyGuard {
+contract PremiumDIDAuction is Ownable, ReentrancyGuard, Pausable {
     using SafeERC20 for IERC20;
 
     // ============ Enums ============
@@ -111,6 +112,9 @@ contract PremiumDIDAuction is Ownable, ReentrancyGuard {
 
     // Auction counter
     uint256 public nextAuctionId;
+
+    // Configurable auction duration for short Display ID auctions (default 30 minutes)
+    uint256 public shortDisplayIdAuctionDuration = 30 minutes;
 
     // ============ Events ============
 
@@ -229,6 +233,19 @@ contract PremiumDIDAuction is Ownable, ReentrancyGuard {
 
     function setPaymentToken(address token, bool supported) external onlyOwner {
         supportedPaymentTokens[token] = supported;
+    }
+
+    function setShortDisplayIdAuctionDuration(uint256 _duration) external onlyOwner {
+        require(_duration >= 10 minutes && _duration <= 30 days, "Auction: invalid duration");
+        shortDisplayIdAuctionDuration = _duration;
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     // ============ Auction Creation Functions ============
@@ -401,7 +418,7 @@ contract PremiumDIDAuction is Ownable, ReentrancyGuard {
     function createShortDisplayIdAuction(
         string calldata displayId,
         address paymentToken
-    ) external validPaymentToken(paymentToken) returns (uint256) {
+    ) external validPaymentToken(paymentToken) whenNotPaused returns (uint256) {
         // Validate display ID format
         require(dualDIDRegistry.validateDisplayIdFormat(displayId), "Auction: invalid format");
         
@@ -439,7 +456,7 @@ contract PremiumDIDAuction is Ownable, ReentrancyGuard {
             minIncrement: minIncrement,
             reservePrice: startPrice,
             startTime: block.timestamp,
-            endTime: block.timestamp + 30 minutes, // Fixed 30 minute duration
+            endTime: block.timestamp + shortDisplayIdAuctionDuration,
             extensionTime: ENGLISH_EXTENSION_DURATION,
             highestBidder: address(0),
             paymentToken: paymentToken,
@@ -456,7 +473,7 @@ contract PremiumDIDAuction is Ownable, ReentrancyGuard {
             AuctionType.English,
             startPrice,
             block.timestamp,
-            block.timestamp + 30 minutes
+            block.timestamp + shortDisplayIdAuctionDuration
         );
         
         return auctionId;
@@ -550,6 +567,7 @@ contract PremiumDIDAuction is Ownable, ReentrancyGuard {
     function placeBid(uint256 auctionId, uint256 amount) 
         external 
         nonReentrant 
+        whenNotPaused
         auctionExists(auctionId) 
         auctionActive(auctionId) 
     {

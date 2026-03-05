@@ -84,11 +84,22 @@ contract DynamicPricing is Ownable {
 
     // ============ Queue Management ============
 
+    // Authorized contracts that can update metrics
+    mapping(address => bool) public authorizedContracts;
+
+    modifier onlyAuthorized() {
+        require(authorizedContracts[msg.sender] || msg.sender == owner(), "DynamicPricing: not authorized");
+        _;
+    }
+
+    function setAuthorizedContract(address _contract, bool authorized) external onlyOwner {
+        authorizedContracts[_contract] = authorized;
+    }
+
     /**
      * @dev Update queue metrics (called by Escrow contract)
      */
-    function updateQueueMetrics(uint256 _pendingTaskCount, uint256 _activeProviderCount) external {
-        // In production, restrict to authorized callers
+    function updateQueueMetrics(uint256 _pendingTaskCount, uint256 _activeProviderCount) external onlyAuthorized {
         pendingTaskCount = _pendingTaskCount;
         activeProviderCount = _activeProviderCount;
 
@@ -101,7 +112,7 @@ contract DynamicPricing is Ownable {
     /**
      * @dev Increment pending task count
      */
-    function incrementPendingTasks() external {
+    function incrementPendingTasks() external onlyAuthorized {
         pendingTaskCount++;
         supplyDemandCoefficient = _calculateSupplyDemandCoefficient();
     }
@@ -109,7 +120,7 @@ contract DynamicPricing is Ownable {
     /**
      * @dev Decrement pending task count
      */
-    function decrementPendingTasks() external {
+    function decrementPendingTasks() external onlyAuthorized {
         if (pendingTaskCount > 0) {
             pendingTaskCount--;
         }

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./DIDRegistry.sol";
+import "./DualDIDRegistry.sol";
 import "./ReputationScore.sol";
 
 /**
@@ -86,7 +86,7 @@ contract IncentiveSystem is Ownable {
     
     // ============ State Variables ============
     
-    DIDRegistry public didRegistry;
+    DualDIDRegistry public dualDIDRegistry;
     ReputationScore public reputationScore;
     
     // Human DID => Incentive data
@@ -130,8 +130,8 @@ contract IncentiveSystem is Ownable {
     
     // ============ Constructor ============
     
-    constructor(address _didRegistry, address _reputationScore) Ownable(msg.sender) {
-        didRegistry = DIDRegistry(_didRegistry);
+    constructor(address _dualDIDRegistry, address _reputationScore) Ownable(msg.sender) {
+        dualDIDRegistry = DualDIDRegistry(_dualDIDRegistry);
         reputationScore = ReputationScore(_reputationScore);
         
         // Initialize KYC level points
@@ -148,8 +148,8 @@ contract IncentiveSystem is Ownable {
         authorizedCallers[caller] = authorized;
     }
     
-    function setContracts(address _didRegistry, address _reputationScore) external onlyOwner {
-        didRegistry = DIDRegistry(_didRegistry);
+    function setContracts(address _dualDIDRegistry, address _reputationScore) external onlyOwner {
+        dualDIDRegistry = DualDIDRegistry(_dualDIDRegistry);
         reputationScore = ReputationScore(_reputationScore);
     }
     
@@ -161,13 +161,14 @@ contract IncentiveSystem is Ownable {
     // ============ Human DID Incentive Functions ============
     
     /**
-     * @dev Claim registration bonus for Human DID
-     * @param humanDID The Human DID to claim for
+     * @dev Claim registration bonus for OnChain DID
+     * @param onChainDID The OnChain DID to claim for
      */
-    function claimHumanRegistrationBonus(bytes32 humanDID) external {
-        DIDRegistry.HumanDID memory did = didRegistry.getHumanDID(humanDID);
+    function claimHumanRegistrationBonus(bytes32 onChainDID) external {
+        DualDIDRegistry.OnChainDID memory did = dualDIDRegistry.getOnChainDID(onChainDID);
         require(did.active, "IncentiveSystem: DID not active");
-        require(did.owner == msg.sender, "IncentiveSystem: not DID owner");
+        require(did.walletAddress == msg.sender, "IncentiveSystem: not DID owner");
+        bytes32 humanDID = onChainDID;
         
         HumanIncentive storage incentive = humanIncentives[humanDID];
         require(!incentive.registered, "IncentiveSystem: already claimed");
@@ -181,13 +182,14 @@ contract IncentiveSystem is Ownable {
     
     /**
      * @dev Claim registration bonus with referral code
-     * @param humanDID The Human DID to claim for
+     * @param onChainDID The OnChain DID to claim for
      * @param inviteCode The invite code from another user
      */
-    function claimHumanRegistrationWithReferral(bytes32 humanDID, bytes32 inviteCode) external {
-        DIDRegistry.HumanDID memory did = didRegistry.getHumanDID(humanDID);
+    function claimHumanRegistrationWithReferral(bytes32 onChainDID, bytes32 inviteCode) external {
+        DualDIDRegistry.OnChainDID memory did = dualDIDRegistry.getOnChainDID(onChainDID);
         require(did.active, "IncentiveSystem: DID not active");
-        require(did.owner == msg.sender, "IncentiveSystem: not DID owner");
+        require(did.walletAddress == msg.sender, "IncentiveSystem: not DID owner");
+        bytes32 humanDID = onChainDID;
         
         HumanIncentive storage incentive = humanIncentives[humanDID];
         require(!incentive.registered, "IncentiveSystem: already claimed");
@@ -216,14 +218,15 @@ contract IncentiveSystem is Ownable {
     }
     
     /**
-     * @dev Generate a unique invite code for a Human DID
-     * @param humanDID The Human DID to generate code for
+     * @dev Generate a unique invite code for an OnChain DID
+     * @param onChainDID The OnChain DID to generate code for
      * @return inviteCode The generated invite code
      */
-    function generateInviteCode(bytes32 humanDID) external returns (bytes32 inviteCode) {
-        DIDRegistry.HumanDID memory did = didRegistry.getHumanDID(humanDID);
+    function generateInviteCode(bytes32 onChainDID) external returns (bytes32 inviteCode) {
+        DualDIDRegistry.OnChainDID memory did = dualDIDRegistry.getOnChainDID(onChainDID);
         require(did.active, "IncentiveSystem: DID not active");
-        require(did.owner == msg.sender, "IncentiveSystem: not DID owner");
+        require(did.walletAddress == msg.sender, "IncentiveSystem: not DID owner");
+        bytes32 humanDID = onChainDID;
         require(humanIncentives[humanDID].registered, "IncentiveSystem: not registered");
         require(!humanIncentives[humanDID].blacklisted, "IncentiveSystem: blacklisted");
         
@@ -261,16 +264,17 @@ contract IncentiveSystem is Ownable {
     // ============ Agent DID Incentive Functions ============
     
     /**
-     * @dev Claim registration bonus for Agent DID
-     * @param agentDID The Agent DID to claim for
+     * @dev Claim registration bonus for SubDID (Agent)
+     * @param subDID The SubDID to claim for
      */
-    function claimAgentRegistrationBonus(bytes32 agentDID) external {
-        DIDRegistry.AgentDID memory agent = didRegistry.getAgentDID(agentDID);
-        require(agent.active, "IncentiveSystem: agent not active");
-        
-        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(agent.humanDID);
-        require(humanDID.owner == msg.sender, "IncentiveSystem: not agent owner");
-        require(!humanIncentives[agent.humanDID].blacklisted, "IncentiveSystem: human DID blacklisted");
+    function claimAgentRegistrationBonus(bytes32 subDID) external {
+        DualDIDRegistry.SubDID memory sub = dualDIDRegistry.getSubDID(subDID);
+        require(sub.active, "IncentiveSystem: agent not active");
+
+        DualDIDRegistry.OnChainDID memory onChainDID = dualDIDRegistry.getOnChainDID(sub.parentOnChainDID);
+        require(onChainDID.walletAddress == msg.sender, "IncentiveSystem: not agent owner");
+        require(!humanIncentives[sub.parentOnChainDID].blacklisted, "IncentiveSystem: human DID blacklisted");
+        bytes32 agentDID = subDID;
         
         AgentIncentive storage incentive = agentIncentives[agentDID];
         require(!incentive.registered, "IncentiveSystem: already claimed");
@@ -344,14 +348,14 @@ contract IncentiveSystem is Ownable {
     // ============ Reputation Cascading ============
     
     /**
-     * @dev Apply reputation cascading from Agent to Human DID
-     * When Agent score drops by 10, Human score drops by 1
-     * @param agentDID The Agent DID that had reputation change
+     * @dev Apply reputation cascading from SubDID (Agent) to OnChainDID
+     * When Agent score drops by 10, OnChainDID score drops by 1
+     * @param subDID The SubDID that had reputation change
      * @param agentDrop The amount of reputation drop (in 2 decimal format)
      */
-    function applyReputationCascade(bytes32 agentDID, uint256 agentDrop) external onlyAuthorized {
-        DIDRegistry.AgentDID memory agent = didRegistry.getAgentDID(agentDID);
-        bytes32 humanDID = agent.humanDID;
+    function applyReputationCascade(bytes32 subDID, uint256 agentDrop) external onlyAuthorized {
+        DualDIDRegistry.SubDID memory sub = dualDIDRegistry.getSubDID(subDID);
+        bytes32 humanDID = sub.parentOnChainDID;
         
         // Calculate human reputation drop (10:1 ratio)
         uint256 humanDrop = agentDrop / REPUTATION_CASCADE_RATIO;
@@ -359,7 +363,7 @@ contract IncentiveSystem is Ownable {
         if (humanDrop > 0) {
             // Apply drop to human score via ReputationScore contract
             // Note: This requires ReputationScore to have a method for this
-            emit ReputationCascade(humanDID, agentDID, agentDrop, humanDrop);
+            emit ReputationCascade(humanDID, subDID, agentDrop, humanDrop);
         }
     }
     
@@ -410,10 +414,10 @@ contract IncentiveSystem is Ownable {
     function getTotalHumanPoints(bytes32 humanDID) external view returns (uint256 totalPoints) {
         totalPoints = humanIncentives[humanDID].totalPoints;
         
-        // Add points from all agents
-        bytes32[] memory agents = didRegistry.getAgentsByHuman(humanDID);
-        for (uint256 i = 0; i < agents.length; i++) {
-            totalPoints += agentIncentives[agents[i]].totalPoints;
+        // Add points from all sub-DIDs (agents)
+        bytes32[] memory subDIDs = dualDIDRegistry.getSubDIDsByOnChainDID(humanDID);
+        for (uint256 i = 0; i < subDIDs.length; i++) {
+            totalPoints += agentIncentives[subDIDs[i]].totalPoints;
         }
     }
     

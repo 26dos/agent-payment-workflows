@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./DIDRegistry.sol";
+import "./DualDIDRegistry.sol";
 import "./ReputationScore.sol";
 
 /**
@@ -159,8 +159,8 @@ contract TaskSpecification is Ownable {
     }
     
     // ============ State Variables ============
-    
-    DIDRegistry public didRegistry;
+
+    DualDIDRegistry public dualDIDRegistry;
     ReputationScore public reputationScore;
     
     // Task ID => Specification
@@ -219,8 +219,8 @@ contract TaskSpecification is Ownable {
     
     // ============ Constructor ============
     
-    constructor(address _didRegistry, address _reputationScore) Ownable(msg.sender) {
-        didRegistry = DIDRegistry(_didRegistry);
+    constructor(address _dualDIDRegistry, address _reputationScore) Ownable(msg.sender) {
+        dualDIDRegistry = DualDIDRegistry(_dualDIDRegistry);
         reputationScore = ReputationScore(_reputationScore);
     }
     
@@ -230,8 +230,8 @@ contract TaskSpecification is Ownable {
         authorizedContracts[_contract] = authorized;
     }
     
-    function setContracts(address _didRegistry, address _reputationScore) external onlyOwner {
-        didRegistry = DIDRegistry(_didRegistry);
+    function setContracts(address _dualDIDRegistry, address _reputationScore) external onlyOwner {
+        dualDIDRegistry = DualDIDRegistry(_dualDIDRegistry);
         reputationScore = ReputationScore(_reputationScore);
     }
     
@@ -261,12 +261,12 @@ contract TaskSpecification is Ownable {
         string calldata metadataIPFS
     ) external returns (bool) {
         // Validate requester DID
-        DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(requesterDID);
+        DualDIDRegistry.SubDID memory requester = dualDIDRegistry.getSubDID(requesterDID);
         require(requester.active, "TaskSpecification: requester not active");
         
         // Verify sender is the requester's owner
-        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(requester.humanDID);
-        require(humanDID.owner == msg.sender || authorizedContracts[msg.sender], "TaskSpecification: not authorized");
+        DualDIDRegistry.OnChainDID memory onChainDID = dualDIDRegistry.getOnChainDID(requester.parentOnChainDID);
+        require(onChainDID.walletAddress == msg.sender || authorizedContracts[msg.sender], "TaskSpecification: not authorized");
         
         // Validate time constraints
         require(timeConstraints.acceptanceDeadline > block.timestamp, "TaskSpecification: acceptance deadline must be future");
@@ -321,12 +321,12 @@ contract TaskSpecification is Ownable {
         // because the caller has already validated the DID
         if (!authorizedContracts[msg.sender]) {
             // Validate requester DID for direct calls
-            DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(requesterDID);
+            DualDIDRegistry.SubDID memory requester = dualDIDRegistry.getSubDID(requesterDID);
             require(requester.active, "TaskSpecification: requester not active");
             
             // Verify sender is the requester's owner
-            DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(requester.humanDID);
-            require(humanDID.owner == msg.sender, "TaskSpecification: not authorized");
+            DualDIDRegistry.OnChainDID memory onChainDID = dualDIDRegistry.getOnChainDID(requester.parentOnChainDID);
+            require(onChainDID.walletAddress == msg.sender, "TaskSpecification: not authorized");
         }
         
         require(acceptanceDeadline > block.timestamp, "TaskSpecification: acceptance deadline must be future");
@@ -418,7 +418,7 @@ contract TaskSpecification is Ownable {
         }
         
         // Check provider DID is active
-        DIDRegistry.AgentDID memory provider = didRegistry.getAgentDID(providerDID);
+        DualDIDRegistry.SubDID memory provider = dualDIDRegistry.getSubDID(providerDID);
         if (!provider.active) {
             return (false, "Provider DID not active");
         }
@@ -464,11 +464,11 @@ contract TaskSpecification is Ownable {
         Specification storage spec = specifications[taskId];
         
         // Validate provider
-        DIDRegistry.AgentDID memory provider = didRegistry.getAgentDID(providerDID);
+        DualDIDRegistry.SubDID memory provider = dualDIDRegistry.getSubDID(providerDID);
         require(provider.active, "TaskSpecification: provider not active");
-        
-        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(provider.humanDID);
-        require(humanDID.owner == msg.sender, "TaskSpecification: not provider owner");
+
+        DualDIDRegistry.OnChainDID memory onChainDID = dualDIDRegistry.getOnChainDID(provider.parentOnChainDID);
+        require(onChainDID.walletAddress == msg.sender, "TaskSpecification: not provider owner");
         
         // Check deadline (with grace period)
         uint256 deadline = spec.timeConstraints.completionDeadline + spec.timeConstraints.gracePeriod;
@@ -517,11 +517,11 @@ contract TaskSpecification is Ownable {
         require(block.timestamp <= spec.timeConstraints.intermediateDeadline, "TaskSpecification: intermediate deadline passed");
         
         // Validate provider
-        DIDRegistry.AgentDID memory provider = didRegistry.getAgentDID(providerDID);
+        DualDIDRegistry.SubDID memory provider = dualDIDRegistry.getSubDID(providerDID);
         require(provider.active, "TaskSpecification: provider not active");
-        
-        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(provider.humanDID);
-        require(humanDID.owner == msg.sender, "TaskSpecification: not provider owner");
+
+        DualDIDRegistry.OnChainDID memory onChainDID = dualDIDRegistry.getOnChainDID(provider.parentOnChainDID);
+        require(onChainDID.walletAddress == msg.sender, "TaskSpecification: not provider owner");
         
         intermediateResults[taskId].push(resultHash);
         
@@ -550,9 +550,9 @@ contract TaskSpecification is Ownable {
         
         // Verify sender is the requester
         Specification storage spec = specifications[taskId];
-        DIDRegistry.AgentDID memory requester = didRegistry.getAgentDID(spec.requesterDID);
-        DIDRegistry.HumanDID memory humanDID = didRegistry.getHumanDID(requester.humanDID);
-        require(humanDID.owner == msg.sender, "TaskSpecification: not requester");
+        DualDIDRegistry.SubDID memory requester = dualDIDRegistry.getSubDID(spec.requesterDID);
+        DualDIDRegistry.OnChainDID memory onChainDID = dualDIDRegistry.getOnChainDID(requester.parentOnChainDID);
+        require(onChainDID.walletAddress == msg.sender, "TaskSpecification: not requester");
         
         results[taskId].disputed = true;
         
