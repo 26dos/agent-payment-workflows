@@ -991,6 +991,11 @@ func (s *Service) RegisterOffChainDID(ctx context.Context, walletAddress, displa
 		return nil, fmt.Errorf(reason)
 	}
 
+	// Check if this is a premium ID (requires auction, cannot register directly)
+	if s.IsPremiumDisplayID(displayID) {
+		return nil, fmt.Errorf("this Display ID requires auction. 4-character IDs and repeating patterns (like AAAAA, 11111) must be acquired through auction")
+	}
+
 	// Generate DID hash
 	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
 
@@ -1145,6 +1150,11 @@ func (s *Service) RegisterOffChainDIDByEmail(ctx context.Context, email, display
 	valid, _, reason := s.ValidateDisplayID(ctx, displayID)
 	if !valid {
 		return nil, fmt.Errorf(reason)
+	}
+
+	// Check if this is a premium ID (requires auction, cannot register directly)
+	if s.IsPremiumDisplayID(displayID) {
+		return nil, fmt.Errorf("this Display ID requires auction. 4-character IDs and repeating patterns (like AAAAA, 11111) must be acquired through auction")
 	}
 
 	// Generate DID hash

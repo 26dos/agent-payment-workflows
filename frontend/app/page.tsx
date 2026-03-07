@@ -43,7 +43,7 @@ export default function Home() {
           <div className="flex justify-between items-center py-4">
             <Link href="/" className="flex items-center space-x-2">
               <Zap className="h-8 w-8 text-blue-600" />
-              <span className="text-2xl font-bold text-gray-900">ClawPay</span>
+              <span className="text-2xl font-bold text-gray-900">ClawID</span>
             </Link>
             <nav className="flex items-center space-x-6">
               <Link 
@@ -211,7 +211,7 @@ export default function Home() {
           <div className="flex justify-between items-center">
             <div className="flex items-center space-x-2">
               <Zap className="h-6 w-6 text-blue-600" />
-              <span className="font-semibold text-gray-900">ClawPay</span>
+              <span className="font-semibold text-gray-900">ClawID</span>
             </div>
             <p className="text-sm text-gray-500">
               Agentic Settlement Protocol on BSC Mainnet

@@ -36,7 +36,7 @@ export function NetworkGuard({ children }: { children: React.ReactNode }) {
             <h2 className="text-lg font-semibold">Wrong Network</h2>
           </div>
           <p className="mt-3 text-sm text-muted-foreground">
-            ClawPay is deployed on <strong>BSC Mainnet</strong>. Please switch your wallet to the correct network.
+            ClawID is deployed on <strong>BSC Mainnet</strong>. Please switch your wallet to the correct network.
           </p>
           <div className="mt-4 rounded-lg bg-muted p-3 text-sm">
             <div className="flex justify-between">

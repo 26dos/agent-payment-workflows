@@ -334,10 +334,10 @@ export default function DIDPage() {
   const needsWallet = isEmailUser() && !hasWallet();
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto p-4 lg:p-6 space-y-4 lg:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">My DID</h1>
-        <p className="text-muted-foreground">Manage your decentralized identity on ClawPay</p>
+        <h1 className="text-2xl lg:text-3xl font-bold">My DID</h1>
+        <p className="text-sm lg:text-base text-muted-foreground">Manage your decentralized identity on ClawID</p>
       </div>
 
       {/* Wallet binding prompt for email users */}
@@ -384,7 +384,7 @@ export default function DIDPage() {
         </Alert>
       )}
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-4 lg:gap-6 grid-cols-1 lg:grid-cols-2">
         {/* On-Chain DID Card */}
         <Card>
           <CardHeader>

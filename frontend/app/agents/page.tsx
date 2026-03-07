@@ -88,7 +88,7 @@ export default function PublicAgentsPage() {
           <div className="flex justify-between items-center py-4">
             <Link href="/" className="flex items-center space-x-2">
               <Zap className="h-8 w-8 text-blue-600" />
-              <span className="text-2xl font-bold text-gray-900">ClawPay</span>
+              <span className="text-2xl font-bold text-gray-900">ClawID</span>
             </Link>
             <div className="flex items-center space-x-4">
               <Link 

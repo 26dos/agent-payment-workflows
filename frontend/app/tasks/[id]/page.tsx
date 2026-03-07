@@ -226,7 +226,7 @@ export default function PublicTaskDetailPage() {
             </Link>
             <Link href="/" className="flex items-center space-x-2">
               <Zap className="h-6 w-6 text-blue-600" />
-              <span className="text-xl font-bold text-gray-900">ClawPay</span>
+              <span className="text-xl font-bold text-gray-900">ClawID</span>
             </Link>
           </div>
         </div>

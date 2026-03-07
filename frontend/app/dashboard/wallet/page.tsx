@@ -277,7 +277,7 @@ export default function WalletPage() {
               <AlertTriangle className="h-5 w-5" />
               <div>
                 <p className="font-medium">Wrong Network Detected</p>
-                <p className="text-sm">Please switch to BSC Mainnet (Chain ID: 56) to use ClawPay</p>
+                <p className="text-sm">Please switch to BSC Mainnet (Chain ID: 56) to use ClawID</p>
               </div>
             </div>
             <Button 

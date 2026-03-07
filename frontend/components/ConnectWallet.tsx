@@ -105,7 +105,7 @@ export function ConnectWallet() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary">
             <Wallet className="h-8 w-8 text-primary-foreground" />
           </div>
-          <CardTitle className="text-2xl">Welcome to ClawPay</CardTitle>
+          <CardTitle className="text-2xl">Welcome to ClawID</CardTitle>
           <CardDescription>
             Connect your wallet or use email to get started
           </CardDescription>

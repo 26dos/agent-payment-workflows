@@ -21,23 +21,26 @@ export function Header() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background px-6">
-      <div className="flex items-center gap-4">
-        <h1 className="text-lg font-semibold">ClawPay Dashboard</h1>
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b bg-background px-4 lg:px-6">
+      {/* Left side - title with space for mobile menu button */}
+      <div className="flex items-center gap-4 pl-12 lg:pl-0">
+        <h1 className="text-base lg:text-lg font-semibold truncate">ClawID Dashboard</h1>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* USD1 Balance */}
-        <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-1.5">
-          <span className="text-sm text-muted-foreground">Balance:</span>
-          <span className="font-medium">
-            {mounted && balance ? formatUSD1(Number(balance.formatted)) : '0.00'} USD1
+      {/* Right side - wallet info */}
+      <div className="flex items-center gap-2 lg:gap-4">
+        {/* USD1 Balance - hide label on mobile */}
+        <div className="flex items-center gap-1 lg:gap-2 rounded-lg bg-muted px-2 lg:px-3 py-1.5">
+          <span className="hidden sm:inline text-sm text-muted-foreground">Balance:</span>
+          <span className="text-sm lg:text-base font-medium">
+            {mounted && balance ? formatUSD1(Number(balance.formatted)) : '0.00'}
           </span>
+          <span className="text-xs text-muted-foreground">USD1</span>
         </div>
 
-        {/* Reputation Score */}
+        {/* Reputation Score - hide on small screens */}
         {mounted && user && (
-          <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Score:</span>
             <Badge variant={user.human_score >= 75 ? 'success' : 'warning'}>
               {user.human_score}
@@ -45,11 +48,11 @@ export function Header() {
           </div>
         )}
 
-        {/* Wallet Address */}
+        {/* Wallet Address - shorter on mobile */}
         {mounted && address && (
-          <div className="flex items-center gap-2 rounded-lg border px-3 py-1.5">
-            <div className="h-2 w-2 rounded-full bg-green-500" />
-            <span className="text-sm font-medium">{formatAddress(address)}</span>
+          <div className="flex items-center gap-1 lg:gap-2 rounded-lg border px-2 lg:px-3 py-1.5">
+            <div className="h-2 w-2 rounded-full bg-green-500 flex-shrink-0" />
+            <span className="text-xs lg:text-sm font-medium">{formatAddress(address)}</span>
           </div>
         )}
       </div>

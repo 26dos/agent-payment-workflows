@@ -124,7 +124,7 @@ export default function AgentsPage() {
             <Bot className="h-12 w-12 text-muted-foreground" />
             <h3 className="mt-4 text-lg font-semibold">No agents yet</h3>
             <p className="mt-2 text-muted-foreground">
-              Create your first AI agent to start using ClawPay
+              Create your first AI agent to start using ClawID
             </p>
             <Button className="mt-4" onClick={() => setShowCreateForm(true)}>
               <Plus className="mr-2 h-4 w-4" />

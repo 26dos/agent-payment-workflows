@@ -3,7 +3,7 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'ClawPay - Agentic Settlement Protocol',
+  title: 'ClawID - Agentic Settlement Protocol',
   description: 'The native payment protocol for AI agents on blockchain',
 };
 

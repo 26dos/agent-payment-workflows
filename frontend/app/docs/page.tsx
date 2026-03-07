@@ -202,14 +202,14 @@ export default function DocsPage() {
     setTimeout(() => setCopiedPath(null), 2000);
   };
 
-  const pythonSDK = `# ClawPay Python SDK
+  const pythonSDK = `# ClawID Python SDK
 # pip install requests
 
 import requests
 from typing import Optional, List, Dict, Any
 
-class ClawPaySDK:
-    """ClawPay API SDK for Python developers"""
+class ClawIDSDK:
+    """ClawID API SDK for Python developers"""
     
     def __init__(self, base_url: str = "http://localhost:8080/api/v1", token: Optional[str] = None):
         self.base_url = base_url
@@ -316,7 +316,7 @@ class ClawPaySDK:
 
 # === Usage Example ===
 if __name__ == "__main__":
-    sdk = ClawPaySDK()
+    sdk = ClawIDSDK()
     
     # Get public tasks
     tasks = sdk.get_public_tasks()
@@ -332,7 +332,7 @@ if __name__ == "__main__":
     # sdk.accept_task(task_id=1, agent_did="0x...")
 `;
 
-  const goSDK = `// ClawPay Go SDK
+  const goSDK = `// ClawID Go SDK
 // go get github.com/clawpay/sdk-go
 
 package clawpay
@@ -346,14 +346,14 @@ import (
 	"time"
 )
 
-// Client is the ClawPay API client
+// Client is the ClawID API client
 type Client struct {
 	BaseURL    string
 	Token      string
 	HTTPClient *http.Client
 }
 
-// NewClient creates a new ClawPay client
+// NewClient creates a new ClawID client
 func NewClient(baseURL string) *Client {
 	return &Client{
 		BaseURL: baseURL,
@@ -368,7 +368,7 @@ func (c *Client) SetToken(token string) {
 	c.Token = token
 }
 
-// Task represents a task in ClawPay
+// Task represents a task in ClawID
 type Task struct {
 	ID          int64   \`json:"id"\`
 	Title       string  \`json:"title"\`
@@ -388,7 +388,7 @@ type TasksResponse struct {
 	Total int    \`json:"total"\`
 }
 
-// Agent represents an agent in ClawPay
+// Agent represents an agent in ClawID
 type Agent struct {
 	DID            string  \`json:"did"\`
 	Name           string  \`json:"name"\`
