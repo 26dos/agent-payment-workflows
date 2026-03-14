@@ -26,13 +26,18 @@ func New(repo *repository.Repository) *Service {
 // ============ User Service ============
 
 func (s *Service) GetOrCreateUser(ctx context.Context, walletAddress string) (*model.User, error) {
+	user, _, err := s.GetOrCreateUserWithInvite(ctx, walletAddress, "")
+	return user, err
+}
+
+func (s *Service) GetOrCreateUserWithInvite(ctx context.Context, walletAddress, inviteCode string) (*model.User, bool, error) {
 	user, err := s.repo.GetUserByWallet(ctx, walletAddress)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
+		return nil, false, fmt.Errorf("failed to get user: %w", err)
 	}
 
 	if user != nil {
-		return user, nil
+		return user, false, nil
 	}
 
 	// Create new user with wallet
@@ -44,10 +49,15 @@ func (s *Service) GetOrCreateUser(ctx context.Context, walletAddress string) (*m
 	}
 
 	if err := s.repo.CreateUser(ctx, user); err != nil {
-		return nil, fmt.Errorf("failed to create user: %w", err)
+		return nil, false, fmt.Errorf("failed to create user: %w", err)
 	}
 
-	return user, nil
+	// Process invite code if provided
+	if inviteCode != "" {
+		_ = s.ProcessInviteCode(ctx, user.ID, inviteCode)
+	}
+
+	return user, true, nil
 }
 
 func (s *Service) GetUserByWallet(ctx context.Context, walletAddress string) (*model.User, error) {
@@ -115,6 +125,11 @@ func (s *Service) VerifyCode(ctx context.Context, email, code, codeType string) 
 
 // CreateEmailUser creates a new user with email authentication
 func (s *Service) CreateEmailUser(ctx context.Context, email, password, displayID string) (*model.User, error) {
+	return s.CreateEmailUserWithInvite(ctx, email, password, displayID, "")
+}
+
+// CreateEmailUserWithInvite creates a new user with email authentication and optional invite code
+func (s *Service) CreateEmailUserWithInvite(ctx context.Context, email, password, displayID, inviteCode string) (*model.User, error) {
 	// Hash password
 	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -148,6 +163,52 @@ func (s *Service) CreateEmailUser(ctx context.Context, email, password, displayI
 
 	if err := s.repo.CreateUser(ctx, user); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Process invite code if provided
+	if inviteCode != "" {
+		_ = s.ProcessInviteCode(ctx, user.ID, inviteCode)
+	}
+
+	return user, nil
+}
+
+// GetOrCreateGoogleUser creates or gets a user from Google OAuth
+func (s *Service) GetOrCreateGoogleUser(ctx context.Context, email, googleID string) (*model.User, error) {
+	return s.GetOrCreateGoogleUserWithInvite(ctx, email, googleID, "")
+}
+
+// GetOrCreateGoogleUserWithInvite creates or gets a user from Google OAuth with optional invite code
+func (s *Service) GetOrCreateGoogleUserWithInvite(ctx context.Context, email, googleID, inviteCode string) (*model.User, error) {
+	// Try to find existing user by email
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user: %w", err)
+	}
+
+	if user != nil {
+		return user, nil
+	}
+
+	// Create new user with Google auth
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(email+googleID+time.Now().String())))
+
+	user = &model.User{
+		Email:         &email,
+		AuthType:      model.AuthTypeEmail, // Use email auth type for Google users
+		EmailVerified: true,                // Google emails are pre-verified
+		DID:           didHash,
+		HumanScore:    70, // Moderate initial score for Google users
+		Metadata:      fmt.Sprintf(`{"google_id":"%s"}`, googleID),
+	}
+
+	if err := s.repo.CreateUser(ctx, user); err != nil {
+		return nil, fmt.Errorf("failed to create user: %w", err)
+	}
+
+	// Process invite code if provided
+	if inviteCode != "" {
+		_ = s.ProcessInviteCode(ctx, user.ID, inviteCode)
 	}
 
 	return user, nil
@@ -1197,8 +1258,11 @@ func isRepeatingPattern(s string) bool {
 
 // ValidateDisplayID validates a display ID format and availability
 // Returns: (valid, available, reason)
-// Note: Currently only 4+ character IDs are allowed (1-3 chars not yet open)
-// 4 chars OR 5+ repeating patterns (豹子号) require auction
+// Rules:
+// - 6+ chars: Free registration (unless repeating pattern)
+// - 5 chars: Requires 3 successful invites, system assigns randomly
+// - 1-4 chars: Requires auction
+// - Repeating patterns (豹子号): Requires auction regardless of length
 func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool, bool, string) {
 	// Check length
 	if len(displayID) == 0 {
@@ -1208,9 +1272,14 @@ func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool
 		return false, false, "Display ID must be 32 characters or less"
 	}
 	
-	// Currently 1-3 character IDs are not open for registration
-	if len(displayID) < 4 {
-		return false, false, "Display IDs with 1-3 characters are not yet available. Please use 4 or more characters."
+	// 1-4 character IDs require auction
+	if len(displayID) < 5 {
+		return false, false, "Display IDs with 1-4 characters require auction"
+	}
+	
+	// 5 character IDs require 3 invites (cannot be directly registered)
+	if len(displayID) == 5 {
+		return false, false, "5-character Display IDs require 3 successful invites. Use 6+ characters for free registration"
 	}
 
 	// Convert to uppercase for validation
@@ -1221,6 +1290,11 @@ func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool
 		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
 			return false, false, "Display ID can only contain letters (A-Z) and digits (0-9)"
 		}
+	}
+	
+	// Repeating patterns (豹子号) require auction regardless of length
+	if isRepeatingPattern(upperDisplayID) {
+		return false, false, "Repeating pattern Display IDs (like AAAAAA) require auction"
 	}
 
 	// Check availability
@@ -1239,22 +1313,329 @@ func (s *Service) ValidateDisplayID(ctx context.Context, displayID string) (bool
 }
 
 // IsPremiumDisplayID checks if a display ID requires auction (premium)
-// Premium IDs: 4 characters OR 5+ repeating patterns (豹子号) like 11111, AAAAA
-// Note: 1-3 chars are blocked at validation level
+// Premium IDs: 1-4 characters OR any repeating patterns (豹子号) like 11111, AAAAAA
 func (s *Service) IsPremiumDisplayID(displayID string) bool {
 	upperDisplayID := strings.ToUpper(displayID)
 	
-	// 4 characters require auction
-	if len(upperDisplayID) == 4 {
+	// 1-4 characters require auction
+	if len(upperDisplayID) >= 1 && len(upperDisplayID) <= 4 {
 		return true
 	}
 	
 	// Repeating patterns (豹子号) require auction regardless of length
-	if len(upperDisplayID) >= 5 && isRepeatingPattern(upperDisplayID) {
+	if isRepeatingPattern(upperDisplayID) {
 		return true
 	}
 	
 	return false
+}
+
+// IsFiveDigitEligible checks if a display ID is 5 digits (requires invite reward)
+func (s *Service) IsFiveDigitEligible(displayID string) bool {
+	return len(displayID) == 5
+}
+
+// GetUserInviteProgress returns the user's invite progress and claim status
+func (s *Service) GetUserInviteProgress(ctx context.Context, walletAddress string) (int, bool, error) {
+	user, err := s.repo.GetUserByWallet(ctx, walletAddress)
+	if err != nil {
+		return 0, false, err
+	}
+	if user == nil {
+		return 0, false, nil
+	}
+
+	inviteCount := 0
+	claimed := false
+
+	if user.SuccessfulInvites != nil {
+		inviteCount = *user.SuccessfulInvites
+	}
+	if user.FiveDigitDIDClaimed != nil {
+		claimed = *user.FiveDigitDIDClaimed
+	}
+
+	return inviteCount, claimed, nil
+}
+
+// GetUserInviteProgressByEmail returns invite progress for email users
+func (s *Service) GetUserInviteProgressByEmail(ctx context.Context, email string) (int, bool, error) {
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return 0, false, err
+	}
+	if user == nil {
+		return 0, false, nil
+	}
+
+	inviteCount := 0
+	claimed := false
+
+	if user.SuccessfulInvites != nil {
+		inviteCount = *user.SuccessfulInvites
+	}
+	if user.FiveDigitDIDClaimed != nil {
+		claimed = *user.FiveDigitDIDClaimed
+	}
+
+	return inviteCount, claimed, nil
+}
+
+// ClaimFiveDigitDID claims a random 5-digit DID for a user who has successful invites
+// This replaces any existing DID with a new 5-digit one
+func (s *Service) ClaimFiveDigitDID(ctx context.Context, walletAddress string) (*model.OffChainDID, error) {
+	// Check user eligibility
+	user, err := s.repo.GetUserByWallet(ctx, walletAddress)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	
+	// Check if already claimed 5-digit reward
+	if user.FiveDigitDIDClaimed != nil && *user.FiveDigitDIDClaimed {
+		return nil, fmt.Errorf("5-digit DID reward already claimed")
+	}
+	
+	// Check invite count (currently 1 for testing, change to 3 for production)
+	inviteCount := 0
+	if user.SuccessfulInvites != nil {
+		inviteCount = *user.SuccessfulInvites
+	}
+	if inviteCount < 1 {
+		return nil, fmt.Errorf("need 1 successful invite to claim 5-digit DID. Current: %d/1", inviteCount)
+	}
+	
+	// If user already has a DID, deactivate the old one
+	if user.DisplayID != nil && *user.DisplayID != "" {
+		oldDID, _ := s.repo.GetOffChainDIDByDisplayID(ctx, *user.DisplayID)
+		if oldDID != nil {
+			oldDID.Active = false
+			oldDID.UpdatedAt = time.Now()
+			_ = s.repo.UpdateOffChainDID(ctx, oldDID)
+		}
+	}
+	
+	// Generate a random 5-digit DID
+	displayID, err := s.GenerateRandomFiveDigitDID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate 5-digit DID: %w", err)
+	}
+	
+	// Create the off-chain DID
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
+	
+	offChainDID := &model.OffChainDID{
+		DisplayID:         displayID,
+		DIDHash:           didHash,
+		Tier:              model.DIDTierNormal,
+		IsSystemGenerated: false,
+		Active:            true,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+	
+	// Link to on-chain DID if exists
+	onChainDID, _ := s.repo.GetOnChainDIDByWallet(ctx, walletAddress)
+	if onChainDID != nil {
+		offChainDID.CurrentOwnerOnChainID = &onChainDID.DIDHash
+	}
+	
+	if err := s.repo.CreateOffChainDID(ctx, offChainDID); err != nil {
+		return nil, err
+	}
+	
+	// Link to on-chain DID if exists
+	if onChainDID != nil {
+		onChainDID.LinkedOffChainID = &offChainDID.DIDHash
+		if err := s.repo.UpdateOnChainDID(ctx, onChainDID); err != nil {
+			return nil, err
+		}
+	}
+	
+	// Update user with new display ID (replaces old one)
+	if err := s.repo.UpdateUserDisplayID(ctx, user.ID, displayID); err != nil {
+		return nil, err
+	}
+	
+	// Mark as claimed
+	if err := s.repo.MarkFiveDigitDIDClaimed(ctx, user.ID); err != nil {
+		return nil, err
+	}
+	
+	return offChainDID, nil
+}
+
+// ClaimFiveDigitDIDByEmail claims a random 5-digit DID for an email user
+func (s *Service) ClaimFiveDigitDIDByEmail(ctx context.Context, email string) (*model.OffChainDID, error) {
+	user, err := s.repo.GetUserByEmail(ctx, email)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, fmt.Errorf("user not found")
+	}
+	
+	// Check if already claimed 5-digit reward
+	if user.FiveDigitDIDClaimed != nil && *user.FiveDigitDIDClaimed {
+		return nil, fmt.Errorf("5-digit DID reward already claimed")
+	}
+	
+	// Check invite count
+	inviteCount := 0
+	if user.SuccessfulInvites != nil {
+		inviteCount = *user.SuccessfulInvites
+	}
+	if inviteCount < 1 {
+		return nil, fmt.Errorf("need 1 successful invite to claim 5-digit DID. Current: %d/1", inviteCount)
+	}
+	
+	// If user already has a DID, deactivate the old one
+	if user.DisplayID != nil && *user.DisplayID != "" {
+		oldDID, _ := s.repo.GetOffChainDIDByDisplayID(ctx, *user.DisplayID)
+		if oldDID != nil {
+			oldDID.Active = false
+			oldDID.UpdatedAt = time.Now()
+			_ = s.repo.UpdateOffChainDID(ctx, oldDID)
+		}
+	}
+	
+	// Generate a random 5-digit DID
+	displayID, err := s.GenerateRandomFiveDigitDID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate 5-digit DID: %w", err)
+	}
+	
+	// Create the off-chain DID
+	didHash := fmt.Sprintf("0x%x", sha256.Sum256([]byte(displayID)))
+	
+	offChainDID := &model.OffChainDID{
+		DisplayID:         displayID,
+		DIDHash:           didHash,
+		Tier:              model.DIDTierNormal,
+		IsSystemGenerated: false,
+		Active:            true,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
+	
+	if err := s.repo.CreateOffChainDID(ctx, offChainDID); err != nil {
+		return nil, err
+	}
+	
+	// Update user with new display ID
+	if err := s.repo.UpdateUserDisplayID(ctx, user.ID, displayID); err != nil {
+		return nil, err
+	}
+	
+	// Mark as claimed
+	if err := s.repo.MarkFiveDigitDIDClaimed(ctx, user.ID); err != nil {
+		return nil, err
+	}
+	
+	return offChainDID, nil
+}
+
+// GenerateRandomFiveDigitDID generates a random available 5-digit DID
+func (s *Service) GenerateRandomFiveDigitDID(ctx context.Context) (string, error) {
+	const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	
+	// Try up to 100 times to find an available DID
+	for i := 0; i < 100; i++ {
+		// Generate random 5-char string
+		result := make([]byte, 5)
+		for j := 0; j < 5; j++ {
+			result[j] = chars[time.Now().UnixNano()%int64(len(chars))]
+			time.Sleep(time.Nanosecond) // Add small delay for better randomness
+		}
+		displayID := string(result)
+		
+		// Skip repeating patterns
+		if isRepeatingPattern(displayID) {
+			continue
+		}
+		
+		// Check if available
+		existing, _ := s.repo.GetOffChainDIDByDisplayID(ctx, displayID)
+		if existing == nil {
+			blocked, _ := s.repo.IsDisplayIDBlocked(ctx, displayID)
+			if !blocked {
+				return displayID, nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("failed to generate available 5-digit DID after 100 attempts")
+}
+
+// IncrementUserInviteCount increments the successful_invites count for a user
+func (s *Service) IncrementUserInviteCount(ctx context.Context, inviterWallet string) error {
+	return s.repo.IncrementUserInviteCount(ctx, inviterWallet)
+}
+
+// GenerateUserInviteCode generates a unique invite code for a user
+func (s *Service) GenerateUserInviteCode(ctx context.Context, userID int64) (string, error) {
+	// Generate 8-character alphanumeric code
+	const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" // Excluding confusing chars like 0, O, 1, I
+	code := make([]byte, 8)
+	for i := 0; i < 8; i++ {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+		if err != nil {
+			return "", err
+		}
+		code[i] = chars[n.Int64()]
+	}
+	inviteCode := string(code)
+	
+	// Save to database
+	if err := s.repo.SetUserInviteCode(ctx, userID, inviteCode); err != nil {
+		return "", err
+	}
+	
+	return inviteCode, nil
+}
+
+// GetOrCreateInviteCode gets existing invite code or creates a new one
+func (s *Service) GetOrCreateInviteCode(ctx context.Context, userID int64, existingCode *string) (string, error) {
+	if existingCode != nil && *existingCode != "" {
+		return *existingCode, nil
+	}
+	return s.GenerateUserInviteCode(ctx, userID)
+}
+
+// GetUserByInviteCode returns a user by their invite code
+func (s *Service) GetUserByInviteCode(ctx context.Context, inviteCode string) (*model.User, error) {
+	return s.repo.GetUserByInviteCode(ctx, inviteCode)
+}
+
+// ProcessInviteCode processes an invite code during registration
+func (s *Service) ProcessInviteCode(ctx context.Context, newUserID int64, inviteCode string) error {
+	if inviteCode == "" {
+		return nil
+	}
+	
+	// Find inviter
+	inviter, err := s.repo.GetUserByInviteCode(ctx, inviteCode)
+	if err != nil {
+		return err
+	}
+	if inviter == nil {
+		return nil // Invalid invite code, silently ignore
+	}
+	
+	// Set invited_by on new user
+	if err := s.repo.SetUserInvitedBy(ctx, newUserID, inviter.ID); err != nil {
+		return err
+	}
+	
+	// Increment inviter's successful_invites count
+	if inviter.WalletAddress != nil {
+		return s.repo.IncrementUserInviteCount(ctx, *inviter.WalletAddress)
+	}
+	
+	// For email users, increment by user ID
+	return s.repo.IncrementUserInviteCountByID(ctx, inviter.ID)
 }
 
 // GetOffChainDIDByDisplayID returns an off-chain DID by display ID

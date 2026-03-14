@@ -26,29 +26,39 @@ export default function DashboardLayout({
     }
   }, [mounted, isAuthenticated, router]);
 
-  // Show loading state until mounted
   if (!mounted) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="relative">
+          <div className="absolute inset-0 bg-primary/20 blur-xl animate-pulse" />
+          <Loader2 className="relative h-10 w-10 animate-spin text-primary" />
+        </div>
       </div>
     );
   }
 
   if (!isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="relative">
+          <div className="absolute inset-0 bg-primary/20 blur-xl animate-pulse" />
+          <Loader2 className="relative h-10 w-10 animate-spin text-primary" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="min-h-screen bg-background relative">
+      {/* Background effects */}
+      <div className="fixed inset-0 bg-gradient-radial from-primary/5 via-transparent to-transparent pointer-events-none" />
+      <div className="fixed top-0 right-0 w-96 h-96 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed bottom-0 left-64 w-96 h-96 bg-accent/5 rounded-full blur-3xl pointer-events-none" />
+      
       <Sidebar />
-      <div className="lg:ml-64">
+      <div className="lg:ml-64 relative">
         <Header />
-        <main className="p-4 pt-16 lg:p-6 lg:pt-6">{children}</main>
+        <main className="p-4 pt-16 lg:p-6 lg:pt-6 relative z-10">{children}</main>
       </div>
     </div>
   );

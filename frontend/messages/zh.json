@@ -1,0 +1,218 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "错误",
+    "success": "成功",
+    "cancel": "取消",
+    "confirm": "确认",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "copy": "复制",
+    "copied": "已复制！",
+    "share": "分享",
+    "back": "返回",
+    "next": "下一步",
+    "submit": "提交",
+    "close": "关闭",
+    "learnMore": "了解更多",
+    "getStarted": "立即开始",
+    "connectWallet": "连接钱包",
+    "disconnect": "退出登录"
+  },
+  "sidebar": {
+    "dashboard": "仪表盘",
+    "myDid": "我的 DID",
+    "premiumDids": "精品 DID",
+    "agents": "智能代理",
+    "tasks": "任务",
+    "publishTask": "发布任务",
+    "incentives": "激励",
+    "wallet": "钱包",
+    "reputation": "信誉",
+    "batchOnChain": "批量上链"
+  },
+  "nav": {
+    "home": "首页",
+    "dashboard": "仪表盘",
+    "did": "数字身份",
+    "tasks": "任务",
+    "agents": "智能代理",
+    "reputation": "信誉",
+    "wallet": "钱包",
+    "docs": "文档"
+  },
+  "landing": {
+    "title": "ClawID",
+    "subtitle": "您的数字身份基础设施",
+    "heroTitle": "面向",
+    "heroHighlight": "AI代理与人类",
+    "heroTitleSuffix": "的去中心化身份",
+    "heroDescription": "在AI时代建立信任，提供可验证的身份认证。ClawID为人类和AI代理提供统一的身份层，实现链上安全交互。",
+    "cta": "启动应用",
+    "features": {
+      "humanDid": {
+        "title": "人类 DID",
+        "description": "具有信誉评分的人类独特数字身份"
+      },
+      "agentDid": {
+        "title": "代理 DID",
+        "description": "与创建者关联的AI代理可验证身份"
+      },
+      "reputation": {
+        "title": "信誉系统",
+        "description": "基于交易历史和行为的链上信誉"
+      },
+      "tasks": {
+        "title": "任务市场",
+        "description": "带有托管支付保护的任务分配与完成"
+      }
+    },
+    "forDevelopers": {
+      "title": "为开发者打造",
+      "description": "使用我们全面的SDK和API将ClawID集成到您的dApps中",
+      "sdk": "TypeScript SDK",
+      "contracts": "智能合约",
+      "api": "REST API"
+    },
+    "footer": {
+      "copyright": "© 2024 ClawID. 保留所有权利。",
+      "terms": "服务条款",
+      "privacy": "隐私政策",
+      "docs": "文档"
+    }
+  },
+  "auth": {
+    "signIn": "登录",
+    "signUp": "注册",
+    "signOut": "退出登录",
+    "email": "邮箱",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "verificationCode": "验证码",
+    "sendCode": "发送验证码",
+    "resendCode": "重新发送",
+    "orContinueWith": "或使用以下方式继续",
+    "walletConnect": "钱包连接",
+    "googleLogin": "使用 Google 登录",
+    "emailLogin": "使用邮箱登录",
+    "noAccount": "还没有账户？",
+    "haveAccount": "已有账户？",
+    "forgotPassword": "忘记密码？"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "welcome": "欢迎",
+    "overview": "概览",
+    "yourDID": "您的 DID",
+    "humanScore": "人类评分",
+    "totalTasks": "任务总数",
+    "activeAgents": "活跃代理",
+    "recentActivity": "最近活动",
+    "quickActions": "快捷操作",
+    "newAgent": "+ 新建代理",
+    "createTask": "创建任务",
+    "yourAgents": "我的代理",
+    "viewAll": "查看全部",
+    "noAgentsYet": "暂无代理",
+    "createFirstAgent": "+ 创建第一个代理",
+    "yourReputation": "我的信誉",
+    "bindWalletTitle": "绑定钱包以获得完整功能",
+    "bindWalletDesc": "您当前使用邮箱登录。绑定钱包后可创建任务、管理交易并使用所有功能。",
+    "bindWalletNow": "立即绑定钱包",
+    "connectWalletTitle": "连接您的钱包",
+    "connectWalletDesc": "您的钱包已绑定到此账户。连接钱包以签署交易并执行业务操作。"
+  },
+  "did": {
+    "title": "DID 管理",
+    "subtitle": "管理您的去中心化身份",
+    "register": "注册 DID",
+    "displayId": "展示 ID",
+    "displayIdPlaceholder": "输入您想要的展示 ID",
+    "rules": {
+      "title": "展示 ID 注册规则",
+      "rule6Plus": "6位及以上：免费注册",
+      "rule5Digit": "5位：邀请3位好友解锁",
+      "rule1to4": "1-4位：需要竞拍",
+      "ruleRepeating": "重复字符（如 11111）：需要竞拍"
+    },
+    "validation": {
+      "available": "可用",
+      "unavailable": "不可用",
+      "tooShort": "免费注册至少需要6个字符",
+      "invalid": "格式无效"
+    },
+    "invite": {
+      "title": "邀请好友赢奖励",
+      "progress": "邀请进度",
+      "inviteCount": "{count}/{required} 次邀请",
+      "inviteMore": "再邀请 {count} 位用户即可解锁随机5位数DID！",
+      "eligible": "恭喜！您已获得5位数DID奖励！",
+      "claimReward": "领取5位数DID",
+      "claimed": "您已领取过5位数DID奖励",
+      "inviteLink": "您的邀请链接",
+      "generateLink": "生成邀请链接",
+      "inviteCode": "邀请码"
+    },
+    "onChain": "链上 DID",
+    "offChain": "链下 DID",
+    "tier": "等级",
+    "createdAt": "创建时间"
+  },
+  "tasks": {
+    "title": "任务市场",
+    "subtitle": "发现并完成任务",
+    "createTask": "创建任务",
+    "myTasks": "我的任务",
+    "availableTasks": "可用任务",
+    "taskDetails": "任务详情",
+    "reward": "奖励",
+    "deadline": "截止日期",
+    "status": {
+      "open": "开放中",
+      "inProgress": "进行中",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "apply": "申请",
+    "complete": "标记完成",
+    "dispute": "发起争议"
+  },
+  "agents": {
+    "title": "AI 代理",
+    "subtitle": "管理您的AI代理",
+    "createAgent": "创建代理",
+    "myAgents": "我的代理",
+    "agentDetails": "代理详情",
+    "agentName": "代理名称",
+    "agentType": "代理类型",
+    "capabilities": "能力",
+    "status": {
+      "active": "活跃",
+      "inactive": "未激活",
+      "suspended": "已暂停"
+    }
+  },
+  "reputation": {
+    "title": "信誉",
+    "subtitle": "您的链上信誉",
+    "score": "信誉分数",
+    "level": "等级",
+    "history": "历史记录",
+    "breakdown": {
+      "title": "分数明细",
+      "taskCompletion": "任务完成率",
+      "paymentHistory": "支付历史",
+      "disputes": "争议记录",
+      "tenure": "账户年限"
+    }
+  },
+  "wallet": {
+    "title": "钱包",
+    "balance": "余额",
+    "transactions": "交易记录",
+    "deposit": "充值",
+    "withdraw": "提现",
+    "transfer": "转账"
+  }
+}

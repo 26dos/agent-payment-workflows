@@ -1,0 +1,217 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "share": "Share",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "close": "Close",
+    "learnMore": "Learn More",
+    "getStarted": "Get Started",
+    "connectWallet": "Connect Wallet",
+    "disconnect": "Disconnect"
+  },
+  "sidebar": {
+    "dashboard": "Dashboard",
+    "myDid": "My DID",
+    "premiumDids": "Premium DIDs",
+    "agents": "Agents",
+    "tasks": "Tasks",
+    "publishTask": "Publish Task",
+    "incentives": "Incentives",
+    "wallet": "Wallet",
+    "reputation": "Reputation",
+    "batchOnChain": "Batch On-Chain"
+  },
+  "nav": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "did": "DID",
+    "tasks": "Tasks",
+    "agents": "Agents",
+    "reputation": "Reputation",
+    "wallet": "Wallet",
+    "docs": "Docs"
+  },
+  "landing": {
+    "title": "ClawID",
+    "subtitle": "Your Digital Identity Infrastructure",
+    "heroTitle": "Decentralized Identity for",
+    "heroHighlight": "AI Agents & Humans",
+    "heroDescription": "Build trust in the AI era with verifiable identities. ClawID provides a unified identity layer for humans and AI agents to interact securely on-chain.",
+    "cta": "Launch App",
+    "features": {
+      "humanDid": {
+        "title": "Human DID",
+        "description": "Unique digital identity for humans with reputation scoring"
+      },
+      "agentDid": {
+        "title": "Agent DID",
+        "description": "Verifiable identities for AI agents linked to their creators"
+      },
+      "reputation": {
+        "title": "Reputation System",
+        "description": "On-chain reputation based on transaction history and behavior"
+      },
+      "tasks": {
+        "title": "Task Marketplace",
+        "description": "Assign and complete tasks with escrow payment protection"
+      }
+    },
+    "forDevelopers": {
+      "title": "Built for Developers",
+      "description": "Integrate ClawID into your dApps with our comprehensive SDK and APIs",
+      "sdk": "TypeScript SDK",
+      "contracts": "Smart Contracts",
+      "api": "REST API"
+    },
+    "footer": {
+      "copyright": "© 2024 ClawID. All rights reserved.",
+      "terms": "Terms",
+      "privacy": "Privacy",
+      "docs": "Documentation"
+    }
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signUp": "Sign Up",
+    "signOut": "Sign Out",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "verificationCode": "Verification Code",
+    "sendCode": "Send Code",
+    "resendCode": "Resend Code",
+    "orContinueWith": "Or continue with",
+    "walletConnect": "Connect with Wallet",
+    "googleLogin": "Continue with Google",
+    "emailLogin": "Continue with Email",
+    "noAccount": "Don't have an account?",
+    "haveAccount": "Already have an account?",
+    "forgotPassword": "Forgot Password?"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome",
+    "overview": "Overview",
+    "yourDID": "Your DID",
+    "humanScore": "Human Score",
+    "totalTasks": "Total Tasks",
+    "activeAgents": "Active Agents",
+    "recentActivity": "Recent Activity",
+    "quickActions": "Quick Actions",
+    "newAgent": "+ New Agent",
+    "createTask": "Create Task",
+    "yourAgents": "Your Agents",
+    "viewAll": "View All",
+    "noAgentsYet": "No agents yet",
+    "createFirstAgent": "+ Create Your First Agent",
+    "yourReputation": "Your Reputation",
+    "bindWalletTitle": "Bind Wallet for Full Access",
+    "bindWalletDesc": "You're signed in with email. Bind a wallet to create tasks, manage transactions, and access all features.",
+    "bindWalletNow": "Bind Wallet Now",
+    "connectWalletTitle": "Connect Your Wallet",
+    "connectWalletDesc": "Your wallet is bound to this account. Connect it to sign transactions and perform business operations."
+  },
+  "did": {
+    "title": "DID Management",
+    "subtitle": "Manage your decentralized identity",
+    "register": "Register DID",
+    "displayId": "Display ID",
+    "displayIdPlaceholder": "Enter your desired Display ID",
+    "rules": {
+      "title": "Display ID Registration Rules",
+      "rule6Plus": "6+ characters: Free registration",
+      "rule5Digit": "5 characters: Invite 3 friends to unlock",
+      "rule1to4": "1-4 characters: Auction required",
+      "ruleRepeating": "Repeating patterns (e.g., 11111): Auction required"
+    },
+    "validation": {
+      "available": "Available",
+      "unavailable": "Not Available",
+      "tooShort": "Must be at least 6 characters for free registration",
+      "invalid": "Invalid format"
+    },
+    "invite": {
+      "title": "Invite & Earn Rewards",
+      "progress": "Invite Progress",
+      "inviteCount": "{count}/{required} Invites",
+      "inviteMore": "Invite {count} more users to unlock a random 5-digit DID!",
+      "eligible": "Congratulations! You've earned a 5-digit DID reward!",
+      "claimReward": "Claim Your 5-Digit DID",
+      "claimed": "You've already claimed your 5-digit DID reward",
+      "inviteLink": "Your Invite Link",
+      "generateLink": "Generate Invite Link",
+      "inviteCode": "Invite Code"
+    },
+    "onChain": "On-Chain DID",
+    "offChain": "Off-Chain DID",
+    "tier": "Tier",
+    "createdAt": "Created At"
+  },
+  "tasks": {
+    "title": "Task Marketplace",
+    "subtitle": "Find and complete tasks",
+    "createTask": "Create Task",
+    "myTasks": "My Tasks",
+    "availableTasks": "Available Tasks",
+    "taskDetails": "Task Details",
+    "reward": "Reward",
+    "deadline": "Deadline",
+    "status": {
+      "open": "Open",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "apply": "Apply",
+    "complete": "Mark Complete",
+    "dispute": "Raise Dispute"
+  },
+  "agents": {
+    "title": "AI Agents",
+    "subtitle": "Manage your AI agents",
+    "createAgent": "Create Agent",
+    "myAgents": "My Agents",
+    "agentDetails": "Agent Details",
+    "agentName": "Agent Name",
+    "agentType": "Agent Type",
+    "capabilities": "Capabilities",
+    "status": {
+      "active": "Active",
+      "inactive": "Inactive",
+      "suspended": "Suspended"
+    }
+  },
+  "reputation": {
+    "title": "Reputation",
+    "subtitle": "Your on-chain reputation",
+    "score": "Reputation Score",
+    "level": "Level",
+    "history": "History",
+    "breakdown": {
+      "title": "Score Breakdown",
+      "taskCompletion": "Task Completion",
+      "paymentHistory": "Payment History",
+      "disputes": "Disputes",
+      "tenure": "Account Tenure"
+    }
+  },
+  "wallet": {
+    "title": "Wallet",
+    "balance": "Balance",
+    "transactions": "Transactions",
+    "deposit": "Deposit",
+    "withdraw": "Withdraw",
+    "transfer": "Transfer"
+  }
+}

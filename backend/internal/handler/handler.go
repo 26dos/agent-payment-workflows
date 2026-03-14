@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,13 +17,27 @@ import (
 )
 
 type Handler struct {
-	svc          *service.Service
-	jwtSecret    string
-	emailService *email.EmailService
+	svc                *service.Service
+	jwtSecret          string
+	emailService       *email.EmailService
+	googleClientID     string
+	googleClientSecret string
+	googleRedirectURI  string
 }
 
 func New(svc *service.Service, jwtSecret string, emailService *email.EmailService) *Handler {
 	return &Handler{svc: svc, jwtSecret: jwtSecret, emailService: emailService}
+}
+
+func NewWithGoogle(svc *service.Service, jwtSecret string, emailService *email.EmailService, googleClientID, googleClientSecret, googleRedirectURI string) *Handler {
+	return &Handler{
+		svc:                svc,
+		jwtSecret:          jwtSecret,
+		emailService:       emailService,
+		googleClientID:     googleClientID,
+		googleClientSecret: googleClientSecret,
+		googleRedirectURI:  googleRedirectURI,
+	}
 }
 
 // ============ Auth Handlers ============
@@ -31,6 +46,7 @@ type LoginRequest struct {
 	WalletAddress string `json:"wallet_address" binding:"required"`
 	Message       string `json:"message" binding:"required"`
 	Signature     string `json:"signature" binding:"required"`
+	InviteCode    string `json:"invite_code"` // Optional invite/referral code
 }
 
 type LoginResponse struct {
@@ -54,10 +70,15 @@ func (h *Handler) Login(c *gin.Context) {
 	}
 
 	// Get or create user
-	user, err := h.svc.GetOrCreateUser(c.Request.Context(), req.WalletAddress)
+	user, isNew, err := h.svc.GetOrCreateUserWithInvite(c.Request.Context(), req.WalletAddress, req.InviteCode)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user"})
 		return
+	}
+	
+	// Log if new user with invite
+	if isNew && req.InviteCode != "" {
+		log.Info().Str("wallet", req.WalletAddress).Str("invite_code", req.InviteCode).Msg("New user registered with invite code")
 	}
 
 	// Generate JWT token
@@ -149,10 +170,11 @@ func (h *Handler) SendVerificationCode(c *gin.Context) {
 }
 
 type EmailRegisterRequest struct {
-	Email    string `json:"email" binding:"required,email"`
-	Password string `json:"password" binding:"required,min=8"`
-	Code     string `json:"code" binding:"required"`
-	DisplayID string `json:"display_id"` // Optional, can set later
+	Email      string `json:"email" binding:"required,email"`
+	Password   string `json:"password" binding:"required,min=8"`
+	Code       string `json:"code" binding:"required"`
+	DisplayID  string `json:"display_id"`  // Optional, can set later
+	InviteCode string `json:"invite_code"` // Optional invite/referral code
 }
 
 // EmailRegister registers a new user with email
@@ -177,8 +199,8 @@ func (h *Handler) EmailRegister(c *gin.Context) {
 		return
 	}
 
-	// Create user
-	user, err := h.svc.CreateEmailUser(c.Request.Context(), req.Email, req.Password, req.DisplayID)
+	// Create user with invite code
+	user, err := h.svc.CreateEmailUserWithInvite(c.Request.Context(), req.Email, req.Password, req.DisplayID, req.InviteCode)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user: " + err.Error()})
 		return
@@ -259,6 +281,116 @@ func (h *Handler) EmailLoginWithCode(c *gin.Context) {
 
 	// Generate JWT token
 	token, err := middleware.GenerateTokenForEmail(req.Email, h.jwtSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
+		return
+	}
+
+	c.JSON(http.StatusOK, LoginResponse{
+		Token: token,
+		User:  user,
+	})
+}
+
+// ============ Google OAuth Handlers ============
+
+// GetGoogleAuthURL returns the Google OAuth authorization URL
+func (h *Handler) GetGoogleAuthURL(c *gin.Context) {
+	if h.googleClientID == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Google OAuth not configured"})
+		return
+	}
+
+	authURL := "https://accounts.google.com/o/oauth2/v2/auth?" +
+		"client_id=" + h.googleClientID +
+		"&redirect_uri=" + h.googleRedirectURI +
+		"&response_type=code" +
+		"&scope=email%20profile" +
+		"&access_type=offline"
+
+	c.JSON(http.StatusOK, gin.H{"url": authURL})
+}
+
+type GoogleLoginRequest struct {
+	Code string `json:"code" binding:"required"`
+}
+
+// GoogleLogin handles Google OAuth callback
+func (h *Handler) GoogleLogin(c *gin.Context) {
+	var req GoogleLoginRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if h.googleClientID == "" || h.googleClientSecret == "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Google OAuth not configured"})
+		return
+	}
+
+	// Exchange authorization code for tokens
+	tokenResp, err := http.PostForm("https://oauth2.googleapis.com/token", map[string][]string{
+		"code":          {req.Code},
+		"client_id":     {h.googleClientID},
+		"client_secret": {h.googleClientSecret},
+		"redirect_uri":  {h.googleRedirectURI},
+		"grant_type":    {"authorization_code"},
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to exchange Google auth code")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to authenticate with Google"})
+		return
+	}
+	defer tokenResp.Body.Close()
+
+	var tokenData map[string]interface{}
+	if err := json.NewDecoder(tokenResp.Body).Decode(&tokenData); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Google token response"})
+		return
+	}
+
+	accessToken, ok := tokenData["access_token"].(string)
+	if !ok {
+		errorDesc, _ := tokenData["error_description"].(string)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Google authentication failed: " + errorDesc})
+		return
+	}
+
+	// Get user info from Google
+	userInfoReq, _ := http.NewRequest("GET", "https://www.googleapis.com/oauth2/v2/userinfo", nil)
+	userInfoReq.Header.Set("Authorization", "Bearer "+accessToken)
+
+	userInfoResp, err := http.DefaultClient.Do(userInfoReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get user info from Google"})
+		return
+	}
+	defer userInfoResp.Body.Close()
+
+	var userInfo map[string]interface{}
+	if err := json.NewDecoder(userInfoResp.Body).Decode(&userInfo); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse Google user info"})
+		return
+	}
+
+	email, _ := userInfo["email"].(string)
+	googleID, _ := userInfo["id"].(string)
+
+	if email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No email returned from Google"})
+		return
+	}
+
+	// Get or create user
+	user, err := h.svc.GetOrCreateGoogleUser(c.Request.Context(), email, googleID)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to create/get Google user")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
+		return
+	}
+
+	// Generate JWT token
+	token, err := middleware.GenerateTokenForEmail(email, h.jwtSecret)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
@@ -1576,12 +1708,23 @@ func (h *Handler) ValidateDisplayID(c *gin.Context) {
 
 	valid, available, reason := h.svc.ValidateDisplayID(c.Request.Context(), displayID)
 	isPremium := h.svc.IsPremiumDisplayID(displayID)
+	isFiveDigit := h.svc.IsFiveDigitEligible(displayID)
+	
+	// Determine registration type
+	registrationType := "free"
+	if isPremium {
+		registrationType = "auction"
+	} else if isFiveDigit {
+		registrationType = "invite_reward"
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"valid":      valid,
-		"available":  available,
-		"reason":     reason,
-		"is_premium": isPremium,
+		"valid":             valid,
+		"available":         available,
+		"reason":            reason,
+		"is_premium":        isPremium,
+		"is_five_digit":     isFiveDigit,
+		"registration_type": registrationType,
 	})
 }
 
@@ -1605,6 +1748,114 @@ func (h *Handler) GetOffChainDID(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, offChainDID)
+}
+
+// GetInviteProgress returns the user's invite progress
+func (h *Handler) GetInviteProgress(c *gin.Context) {
+	var inviteCount int
+	var claimed bool
+	var err error
+
+	// Try wallet address first
+	walletAddress, walletExists := c.Get("wallet_address")
+	email, emailExists := c.Get("email")
+	
+	log.Info().
+		Bool("walletExists", walletExists).
+		Bool("emailExists", emailExists).
+		Str("walletAddress", fmt.Sprintf("%v", walletAddress)).
+		Str("email", fmt.Sprintf("%v", email)).
+		Msg("[GetInviteProgress] Starting")
+	
+	if walletExists && walletAddress != nil && walletAddress.(string) != "" {
+		log.Info().Str("walletAddress", walletAddress.(string)).Msg("[GetInviteProgress] Using wallet")
+		inviteCount, claimed, err = h.svc.GetUserInviteProgress(c.Request.Context(), walletAddress.(string))
+	} else if emailExists && email != nil && email.(string) != "" {
+		log.Info().Str("email", email.(string)).Msg("[GetInviteProgress] Using email")
+		inviteCount, claimed, err = h.svc.GetUserInviteProgressByEmail(c.Request.Context(), email.(string))
+	} else {
+		log.Warn().Msg("[GetInviteProgress] No auth found")
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	if err != nil {
+		log.Error().Err(err).Msg("[GetInviteProgress] Error getting progress")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get invite progress: " + err.Error()})
+		return
+	}
+
+	log.Info().Int("inviteCount", inviteCount).Bool("claimed", claimed).Msg("[GetInviteProgress] Result")
+
+	c.JSON(http.StatusOK, gin.H{
+		"invite_count":      inviteCount,
+		"required_invites":  1,
+		"eligible":          inviteCount >= 1,
+		"five_digit_claimed": claimed,
+	})
+}
+
+// ClaimFiveDigitDID claims a random 5-digit DID for eligible users
+func (h *Handler) ClaimFiveDigitDID(c *gin.Context) {
+	var offChainDID *model.OffChainDID
+	var err error
+
+	walletAddress, walletExists := c.Get("wallet_address")
+	email, emailExists := c.Get("email")
+	
+	if walletExists && walletAddress.(string) != "" {
+		offChainDID, err = h.svc.ClaimFiveDigitDID(c.Request.Context(), walletAddress.(string))
+	} else if emailExists && email.(string) != "" {
+		offChainDID, err = h.svc.ClaimFiveDigitDIDByEmail(c.Request.Context(), email.(string))
+	} else {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"display_id": offChainDID.DisplayID,
+		"did_hash":   offChainDID.DIDHash,
+	})
+}
+
+// GetMyInviteCode returns the user's invite code (generates if doesn't exist)
+func (h *Handler) GetMyInviteCode(c *gin.Context) {
+	walletAddress, walletExists := c.Get("wallet_address")
+	email, emailExists := c.Get("email")
+	
+	var user *model.User
+	var err error
+	
+	if walletExists {
+		user, err = h.svc.GetUserByWallet(c.Request.Context(), walletAddress.(string))
+	} else if emailExists {
+		user, err = h.svc.GetUserByEmail(c.Request.Context(), email.(string))
+	} else {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
+		return
+	}
+	
+	if err != nil || user == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "user not found"})
+		return
+	}
+	
+	inviteCode, err := h.svc.GetOrCreateInviteCode(c.Request.Context(), user.ID, user.InviteCode)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate invite code"})
+		return
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"invite_code": inviteCode,
+		"invite_link": "https://clawid.net?ref=" + inviteCode,
+	})
 }
 
 // ============ DID Transfer Handlers ============

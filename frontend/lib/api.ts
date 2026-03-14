@@ -96,14 +96,14 @@ export const authApi = {
   getNonce: (walletAddress: string) =>
     api.get<{ message: string; nonce: number }>(`/auth/nonce?wallet_address=${walletAddress}`),
 
-  login: (data: { wallet_address: string; message: string; signature: string }) =>
+  login: (data: { wallet_address: string; message: string; signature: string; invite_code?: string }) =>
     api.post<{ token: string; user: any }>('/auth/login', data),
 
   // Email auth
   sendVerificationCode: (email: string, type: 'register' | 'login' | 'reset_password' = 'register') =>
     api.post<{ message: string; code?: string }>('/auth/email/send-code', { email, type }),
 
-  emailRegister: (data: { email: string; password: string; code: string; display_id?: string }) =>
+  emailRegister: (data: { email: string; password: string; code: string; display_id?: string; invite_code?: string }) =>
     api.post<{ token: string; user: any; message: string }>('/auth/email/register', data),
 
   emailLogin: (data: { email: string; password: string }) =>
@@ -111,6 +111,13 @@ export const authApi = {
 
   emailLoginWithCode: (data: { email: string; code: string }) =>
     api.post<{ token: string; user: any }>('/auth/email/login-with-code', data),
+
+  // Google OAuth
+  getGoogleAuthURL: () =>
+    api.get<{ url: string }>('/auth/google/url'),
+
+  googleLogin: (code: string) =>
+    api.post<{ token: string; user: any }>('/auth/google', { code }),
 };
 
 export const walletApi = {
@@ -393,7 +400,7 @@ export interface DIDTransferListing {
 
 export const didApi = {
   // Register on-chain DID
-  registerOnChainDID: (walletAddress?: string, txHash?: string, didHash?: string) => 
+  registerOnChainDID: (walletAddress?: string, txHash?: string, didHash?: string) =>
     api.post<OnChainDID>('/dids/on-chain', { wallet_address: walletAddress, tx_hash: txHash, did_hash: didHash }),
 
   // Register off-chain DID
@@ -409,10 +416,34 @@ export const didApi = {
 
   // Validate display ID
   validateDisplayID: (displayId: string) =>
-    api.get<{ valid: boolean; available: boolean; reason: string }>(`/dids/validate?display_id=${displayId}`),
+    api.get<{ 
+      valid: boolean; 
+      available: boolean; 
+      reason: string; 
+      is_premium: boolean;
+      is_five_digit: boolean;
+      registration_type: 'free' | 'auction' | 'invite_reward';
+    }>(`/dids/validate?display_id=${displayId}`),
 
   // Get off-chain DID by display ID
   getOffChainDID: (displayId: string) => api.get<OffChainDID>(`/dids/off-chain/${displayId}`),
+
+  // Get invite progress
+  getInviteProgress: () => 
+    api.get<{ 
+      invite_count: number; 
+      required_invites: number; 
+      eligible: boolean; 
+      five_digit_claimed: boolean;
+    }>('/dids/invite-progress'),
+
+  // Claim 5-digit DID
+  claimFiveDigitDID: () =>
+    api.post<{ success: boolean; display_id: string; did_hash: string }>('/dids/claim-five-digit'),
+
+  // Get my invite code
+  getInviteCode: () =>
+    api.get<{ invite_code: string; invite_link: string }>('/dids/invite-code'),
 };
 
 // DID Transfer API

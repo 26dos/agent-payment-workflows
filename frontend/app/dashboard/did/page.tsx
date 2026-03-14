@@ -10,7 +10,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Loader2, CheckCircle, XCircle, User, Link2, Shield, Crown, AlertTriangle, Wallet, ExternalLink, Gavel, Clock, DollarSign, Info } from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { Loader2, CheckCircle, XCircle, User, Link2, Shield, Crown, AlertTriangle, Wallet, ExternalLink, Gavel, Clock, DollarSign, Info, Users, Gift, Sparkles, Copy, Share2 } from 'lucide-react';
 import { didApi, auctionApi, UserDIDInfo } from '@/lib/api';
 import { DID_TIER_NAMES, CONTRACT_ADDRESSES } from '@/lib/config';
 import { useCompleteRegistration, useRegisterOnChainDID, useWalletOnChainDID, useCreateShortDisplayIdAuction, useAuctionByDisplayId } from '@/lib/contracts/hooks';
@@ -32,6 +33,26 @@ export default function DIDPage() {
   const [showBindWallet, setShowBindWallet] = useState(false);
 
   const [auctionCreating, setAuctionCreating] = useState(false);
+  
+  // Invite progress state - initialize with default values so card always shows
+  const [inviteProgress, setInviteProgress] = useState<{
+    invite_count: number;
+    required_invites: number;
+    eligible: boolean;
+    five_digit_claimed: boolean;
+  }>({
+    invite_count: 0,
+    required_invites: 1,
+    eligible: false,
+    five_digit_claimed: false,
+  });
+  const [claimingFiveDigit, setClaimingFiveDigit] = useState(false);
+  
+  // Invite link state
+  const [inviteCode, setInviteCode] = useState<string | null>(null);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [loadingInviteCode, setLoadingInviteCode] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Check if display ID is a repeating pattern (豹子号) like 11111, AAAAA
   const isRepeatingPattern = (str: string): boolean => {
@@ -40,12 +61,17 @@ export default function DIDPage() {
     return str.toUpperCase().split('').every(c => c === firstChar);
   };
 
-  // Check if display ID length is too short (1-3 chars not yet open)
-  const isTooShort = displayId.length > 0 && displayId.length < 4;
-
-  // Premium IDs: 4 characters OR 5+ repeating patterns (豹子号)
-  // Note: 1-3 chars are blocked
-  const isPremiumLength = displayId.length === 4 || (displayId.length >= 5 && isRepeatingPattern(displayId));
+  // New DID rules:
+  // - 6+ chars: Free registration (unless repeating pattern)
+  // - 5 chars: Requires 3 invites (random assignment)
+  // - 1-4 chars: Auction required
+  // - Repeating patterns: Auction required (any length)
+  const isTooShort = displayId.length > 0 && displayId.length < 6 && displayId.length !== 5;
+  const isFiveDigit = displayId.length === 5 && !isRepeatingPattern(displayId);
+  const isRepeating = displayId.length >= 1 && isRepeatingPattern(displayId);
+  
+  // Premium IDs: 1-4 characters OR repeating patterns (豹子号)
+  const isPremiumLength = (displayId.length >= 1 && displayId.length <= 4) || isRepeating;
   
   const getAuctionPrice = (length: number, isRepeating: boolean = false): number => {
     // Repeating patterns (豹子号) use the same pricing as 4-char IDs
@@ -94,10 +120,11 @@ export default function DIDPage() {
   const { data: contractOnChainDID } = useWalletOnChainDID(address as `0x${string}`);
   const hasContractOnChainDID = contractOnChainDID && contractOnChainDID !== '0x0000000000000000000000000000000000000000000000000000000000000000';
 
-  // Load DID info for authenticated users
+  // Load DID info and invite progress for authenticated users
   useEffect(() => {
     if (isAuthenticated) {
       loadDIDInfo();
+      loadInviteProgress();
     } else {
       setLoading(false);
     }
@@ -112,6 +139,70 @@ export default function DIDPage() {
       console.error('Failed to load DID info:', err);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const loadInviteProgress = async () => {
+    try {
+      const progress = await didApi.getInviteProgress();
+      setInviteProgress(progress);
+    } catch (err) {
+      console.error('Failed to load invite progress:', err);
+      // Set default values so the invite card still shows
+      setInviteProgress({
+        invite_count: 0,
+        required_invites: 1,
+        eligible: false,
+        five_digit_claimed: false,
+      });
+    }
+  };
+
+  const loadInviteCode = async () => {
+    try {
+      setLoadingInviteCode(true);
+      const result = await didApi.getInviteCode();
+      setInviteCode(result.invite_code);
+      setInviteLink(result.invite_link);
+    } catch (err) {
+      console.error('Failed to load invite code:', err);
+    } finally {
+      setLoadingInviteCode(false);
+    }
+  };
+
+  const copyInviteLink = () => {
+    if (inviteLink) {
+      navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const shareInviteLink = () => {
+    if (inviteLink && navigator.share) {
+      navigator.share({
+        title: 'Join ClawID',
+        text: 'Join ClawID and get your unique digital identity!',
+        url: inviteLink,
+      });
+    } else if (inviteLink) {
+      copyInviteLink();
+    }
+  };
+  
+  const handleClaimFiveDigit = async () => {
+    try {
+      setClaimingFiveDigit(true);
+      setError(null);
+      const result = await didApi.claimFiveDigitDID();
+      setSuccess(`Congratulations! You've been assigned the 5-digit DID: ${result.display_id}`);
+      await loadDIDInfo();
+      await loadInviteProgress();
+    } catch (err: any) {
+      setError(err.message || 'Failed to claim 5-digit DID');
+    } finally {
+      setClaimingFiveDigit(false);
     }
   };
 
@@ -673,6 +764,123 @@ export default function DIDPage() {
                       : "Connect a wallet to link with On-Chain DID"}
                   </span>
                 </div>
+
+                {/* Invite & Reward Card for users with existing DID */}
+                {inviteProgress && isAuthenticated && (
+                  <Card className="border-purple-200 bg-purple-50/50 mt-4">
+                    <CardContent className="pt-4 space-y-4">
+                      {/* Invite Progress Section */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-5 w-5 text-purple-600" />
+                            <span className="font-semibold text-purple-800">5-Digit DID Reward</span>
+                          </div>
+                          <Badge variant={inviteProgress.eligible ? "default" : "secondary"} className={inviteProgress.eligible ? "bg-purple-600" : ""}>
+                            {inviteProgress.invite_count}/{inviteProgress.required_invites} Invites
+                          </Badge>
+                        </div>
+                        <Progress value={(inviteProgress.invite_count / inviteProgress.required_invites) * 100} className="h-2 mb-3" />
+                        <p className="text-xs text-purple-700 mb-3">
+                          {inviteProgress.eligible 
+                            ? "Congratulations! You've earned a 5-digit DID reward! Claim to replace your current DID."
+                            : `Invite ${inviteProgress.required_invites - inviteProgress.invite_count} more users to unlock a random 5-digit DID!`
+                          }
+                        </p>
+                        {inviteProgress.eligible && !inviteProgress.five_digit_claimed && (
+                          <Button
+                            onClick={handleClaimFiveDigit}
+                            disabled={claimingFiveDigit}
+                            className="w-full bg-purple-600 hover:bg-purple-700"
+                          >
+                            {claimingFiveDigit ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Claiming...
+                              </>
+                            ) : (
+                              <>
+                                <Gift className="mr-2 h-4 w-4" />
+                                Claim 5-Digit DID (Replace Current)
+                              </>
+                            )}
+                          </Button>
+                        )}
+                        {inviteProgress.five_digit_claimed && (
+                          <p className="text-xs text-center text-purple-600">
+                            <CheckCircle className="inline h-3 w-3 mr-1" />
+                            You've already claimed your 5-digit DID reward
+                          </p>
+                        )}
+                      </div>
+                      
+                      {/* Invite Link Section */}
+                      <div className="border-t border-purple-200 pt-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Link2 className="h-5 w-5 text-purple-600" />
+                          <span className="font-semibold text-purple-800">Your Invite Link</span>
+                        </div>
+                        
+                        {!inviteCode && !loadingInviteCode ? (
+                          <Button
+                            onClick={loadInviteCode}
+                            variant="outline"
+                            className="w-full border-purple-300 text-purple-700 hover:bg-purple-100"
+                          >
+                            <Link2 className="mr-2 h-4 w-4" />
+                            Generate Invite Link
+                          </Button>
+                        ) : loadingInviteCode ? (
+                          <div className="flex items-center justify-center py-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input 
+                                value={inviteLink || ''} 
+                                readOnly 
+                                className="text-xs bg-white border-purple-200 font-mono"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={copyInviteLink}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-100"
+                              >
+                                {copied ? (
+                                  <>
+                                    <CheckCircle className="mr-2 h-3 w-3" />
+                                    Copied!
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="mr-2 h-3 w-3" />
+                                    Copy
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                onClick={shareInviteLink}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-100"
+                              >
+                                <Share2 className="mr-2 h-3 w-3" />
+                                Share
+                              </Button>
+                            </div>
+                            <p className="text-xs text-purple-600 text-center">
+                              Invite Code: <span className="font-mono font-bold">{inviteCode}</span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             ) : (
               <div className="space-y-4">
@@ -708,21 +916,34 @@ export default function DIDPage() {
                   {/* Real-time status hints */}
                   {displayId.length === 0 && (
                     <p className="text-xs text-muted-foreground">
-                      Enter your desired Display ID (letters A-Z and digits 0-9)
+                      Enter your desired Display ID (minimum 6 characters for free registration)
                     </p>
                   )}
                   {isTooShort && (
-                    <Alert className="border-red-200 bg-red-50 py-2">
-                      <XCircle className="h-4 w-4 text-red-600" />
-                      <AlertDescription className="text-red-700 text-xs">
-                        <strong>Not Available:</strong> 1-3 character IDs are reserved and not yet open for registration. Please enter at least 4 characters.
+                    <Alert className="border-amber-200 bg-amber-50 py-2">
+                      <Crown className="h-4 w-4 text-amber-600" />
+                      <AlertDescription className="text-amber-700 text-xs">
+                        <strong>Auction Required:</strong> 1-4 character IDs are premium and require an auction. Enter 6+ characters for free registration.
                       </AlertDescription>
                     </Alert>
                   )}
-                  {!isTooShort && displayId.length >= 4 && displayId.length < 5 && !isPremiumLength && (
-                    <p className="text-xs text-muted-foreground">Checking availability...</p>
+                  {isFiveDigit && (
+                    <Alert className="border-purple-200 bg-purple-50 py-2">
+                      <Gift className="h-4 w-4 text-purple-600" />
+                      <AlertDescription className="text-purple-700 text-xs">
+                        <strong>Invite Reward:</strong> 5-digit DIDs are assigned randomly after inviting 3 users. You cannot choose a specific 5-digit ID.
+                      </AlertDescription>
+                    </Alert>
                   )}
-                  {validation && !validation.valid && !isTooShort && (
+                  {isRepeating && displayId.length >= 5 && (
+                    <Alert className="border-amber-200 bg-amber-50 py-2">
+                      <Crown className="h-4 w-4 text-amber-600" />
+                      <AlertDescription className="text-amber-700 text-xs">
+                        <strong>Repeating Pattern - Auction Required:</strong> IDs like "{displayId}" are premium and require an auction.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {validation && !validation.valid && !isTooShort && !isFiveDigit && (
                     <Alert className="border-red-200 bg-red-50 py-2">
                       <XCircle className="h-4 w-4 text-red-600" />
                       <AlertDescription className="text-red-700 text-xs">
@@ -738,7 +959,7 @@ export default function DIDPage() {
                       </AlertDescription>
                     </Alert>
                   )}
-                  {validation?.valid && validation?.available && !isPremiumLength && displayId.length >= 5 && (
+                  {validation?.valid && validation?.available && !isPremiumLength && !isFiveDigit && displayId.length >= 6 && (
                     <Alert className="border-green-200 bg-green-50 py-2">
                       <CheckCircle className="h-4 w-4 text-green-600" />
                       <AlertDescription className="text-green-700 text-xs">
@@ -776,9 +997,126 @@ export default function DIDPage() {
                   </Alert>
                 )}
 
-                <div className="bg-muted p-4 rounded-lg space-y-3">
+                {/* Invite & Reward Card */}
+                {inviteProgress && isAuthenticated && (
+                  <Card className="border-purple-200 bg-purple-50/50">
+                    <CardContent className="pt-4 space-y-4">
+                      {/* Invite Progress Section */}
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Users className="h-5 w-5 text-purple-600" />
+                            <span className="font-semibold text-purple-800">5-Digit DID Reward</span>
+                          </div>
+                          <Badge variant={inviteProgress.eligible ? "default" : "secondary"} className={inviteProgress.eligible ? "bg-purple-600" : ""}>
+                            {inviteProgress.invite_count}/{inviteProgress.required_invites} Invites
+                          </Badge>
+                        </div>
+                        <Progress value={(inviteProgress.invite_count / inviteProgress.required_invites) * 100} className="h-2 mb-3" />
+                        <p className="text-xs text-purple-700 mb-3">
+                          {inviteProgress.eligible 
+                            ? "Congratulations! You've earned a 5-digit DID reward!"
+                            : `Invite ${inviteProgress.required_invites - inviteProgress.invite_count} more users to unlock a random 5-digit DID!`
+                          }
+                        </p>
+                        {inviteProgress.eligible && !inviteProgress.five_digit_claimed && (
+                          <Button
+                            onClick={handleClaimFiveDigit}
+                            disabled={claimingFiveDigit}
+                            className="w-full bg-purple-600 hover:bg-purple-700"
+                          >
+                            {claimingFiveDigit ? (
+                              <>
+                                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                                Claiming...
+                              </>
+                            ) : (
+                              <>
+                                <Gift className="mr-2 h-4 w-4" />
+                                Claim Your 5-Digit DID
+                              </>
+                            )}
+                          </Button>
+                        )}
+                        {inviteProgress.five_digit_claimed && (
+                          <p className="text-xs text-center text-purple-600">
+                            <CheckCircle className="inline h-3 w-3 mr-1" />
+                            You've already claimed your 5-digit DID reward
+                          </p>
+                        )}
+                      </div>
+                      
+                      {/* Invite Link Section */}
+                      <div className="border-t border-purple-200 pt-4">
+                        <div className="flex items-center gap-2 mb-3">
+                          <Link2 className="h-5 w-5 text-purple-600" />
+                          <span className="font-semibold text-purple-800">Your Invite Link</span>
+                        </div>
+                        
+                        {!inviteCode && !loadingInviteCode ? (
+                          <Button
+                            onClick={loadInviteCode}
+                            variant="outline"
+                            className="w-full border-purple-300 text-purple-700 hover:bg-purple-100"
+                          >
+                            <Link2 className="mr-2 h-4 w-4" />
+                            Generate Invite Link
+                          </Button>
+                        ) : loadingInviteCode ? (
+                          <div className="flex items-center justify-center py-2">
+                            <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Input 
+                                value={inviteLink || ''} 
+                                readOnly 
+                                className="text-xs bg-white border-purple-200 font-mono"
+                              />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                onClick={copyInviteLink}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-100"
+                              >
+                                {copied ? (
+                                  <>
+                                    <CheckCircle className="mr-2 h-3 w-3" />
+                                    Copied!
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="mr-2 h-3 w-3" />
+                                    Copy
+                                  </>
+                                )}
+                              </Button>
+                              <Button
+                                onClick={shareInviteLink}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-100"
+                              >
+                                <Share2 className="mr-2 h-3 w-3" />
+                                Share
+                              </Button>
+                            </div>
+                            <p className="text-xs text-purple-600 text-center">
+                              Invite Code: <span className="font-mono font-bold">{inviteCode}</span>
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <div className="bg-muted/50 p-4 rounded-xl space-y-3 border border-border/50">
                   <h4 className="font-semibold text-sm flex items-center gap-2">
-                    <Info className="h-4 w-4" />
+                    <Info className="h-4 w-4 text-primary" />
                     Display ID Registration Rules
                   </h4>
                   <div className="space-y-2">
@@ -788,22 +1126,22 @@ export default function DIDPage() {
                     </div>
                     <div className="text-xs">
                       <p className="font-medium text-foreground mb-1">Registration Types:</p>
-                      <div className="grid gap-1 text-muted-foreground">
+                      <div className="grid gap-1.5 text-muted-foreground">
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          <span><strong>5+ characters:</strong> Free instant registration</span>
+                          <span><strong>6+ characters:</strong> Free instant registration</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                          <span><strong>5 characters:</strong> Invite 3 users to unlock (random assignment)</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          <span><strong>4 characters:</strong> Auction required (10 USD1 starting price)</span>
+                          <span><strong>1-4 characters:</strong> Auction required</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-                          <span><strong>Repeating patterns</strong> (11111, AAAAA): Auction required (10 USD1)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                          <span><strong>1-3 characters:</strong> Not yet available (coming soon)</span>
+                          <span><strong>Repeating patterns</strong> (111111, AAAAAA): Auction required</span>
                         </div>
                       </div>
                     </div>
@@ -861,15 +1199,25 @@ export default function DIDPage() {
                     )}
                     {isConnected && !hasContractOnChainDID && (
                       <p className="text-xs text-center text-amber-600">
-                        You need to register an on-chain Human DID first (see below)
+                        You need to register an on-chain Human DID first (see On-Chain DID card)
                       </p>
                     )}
                   </div>
-                ) : (
+                ) : isFiveDigit ? (
+                  <div className="text-center py-2">
+                    <p className="text-sm text-muted-foreground">
+                      5-digit DIDs are randomly assigned after inviting 3 users.
+                    </p>
+                    <p className="text-xs text-purple-600 mt-1">
+                      Check your invite progress above to claim your reward!
+                    </p>
+                  </div>
+                ) : displayId.length >= 6 && !isRepeating ? (
                   <Button
                     onClick={handleRegister}
                     disabled={!validation?.valid || !validation?.available || registering}
                     className="w-full"
+                    variant="glow"
                   >
                     {registering ? (
                       <>
@@ -877,10 +1225,13 @@ export default function DIDPage() {
                         Registering...
                       </>
                     ) : (
-                      'Register Display ID (Free)'
+                      <>
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        Register Display ID (Free)
+                      </>
                     )}
                   </Button>
-                )}
+                ) : null}
 
                 <p className="text-xs text-center text-muted-foreground">
                   Want to browse existing auctions?{' '}

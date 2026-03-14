@@ -33,7 +33,8 @@ func (r *Repository) CreateUser(ctx context.Context, user *model.User) error {
 
 func (r *Repository) GetUserByWallet(ctx context.Context, walletAddress string) (*model.User, error) {
 	query := `
-		SELECT id, wallet_address, email, password_hash, auth_type, email_verified, did, display_id, human_score, metadata, created_at, updated_at 
+		SELECT id, wallet_address, email, password_hash, auth_type, email_verified, did, display_id, human_score, metadata, created_at, updated_at,
+		       successful_invites, five_digit_did_claimed, invite_code, invited_by
 		FROM users WHERE LOWER(wallet_address) = LOWER($1)
 	`
 	user := &model.User{}
@@ -41,6 +42,7 @@ func (r *Repository) GetUserByWallet(ctx context.Context, walletAddress string) 
 		&user.ID, &user.WalletAddress, &user.Email, &user.PasswordHash, &user.AuthType,
 		&user.EmailVerified, &user.DID, &user.DisplayID, &user.HumanScore, &user.Metadata,
 		&user.CreatedAt, &user.UpdatedAt,
+		&user.SuccessfulInvites, &user.FiveDigitDIDClaimed, &user.InviteCode, &user.InvitedBy,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -50,7 +52,8 @@ func (r *Repository) GetUserByWallet(ctx context.Context, walletAddress string) 
 
 func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	query := `
-		SELECT id, wallet_address, email, password_hash, auth_type, email_verified, did, display_id, human_score, metadata, created_at, updated_at 
+		SELECT id, wallet_address, email, password_hash, auth_type, email_verified, did, display_id, human_score, metadata, created_at, updated_at,
+		       successful_invites, five_digit_did_claimed, invite_code, invited_by
 		FROM users WHERE LOWER(email) = LOWER($1)
 	`
 	user := &model.User{}
@@ -58,6 +61,7 @@ func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*model.U
 		&user.ID, &user.WalletAddress, &user.Email, &user.PasswordHash, &user.AuthType,
 		&user.EmailVerified, &user.DID, &user.DisplayID, &user.HumanScore, &user.Metadata,
 		&user.CreatedAt, &user.UpdatedAt,
+		&user.SuccessfulInvites, &user.FiveDigitDIDClaimed, &user.InviteCode, &user.InvitedBy,
 	)
 	if err == pgx.ErrNoRows {
 		return nil, nil
@@ -103,6 +107,59 @@ func (r *Repository) UpdateUserWallet(ctx context.Context, userID int64, walletA
 func (r *Repository) UpdateUserDisplayID(ctx context.Context, userID int64, displayID string) error {
 	query := `UPDATE users SET display_id = $1, updated_at = NOW() WHERE id = $2`
 	_, err := r.db.Exec(ctx, query, displayID, userID)
+	return err
+}
+
+func (r *Repository) IncrementUserInviteCount(ctx context.Context, walletAddress string) error {
+	query := `
+		UPDATE users 
+		SET successful_invites = COALESCE(successful_invites, 0) + 1, updated_at = NOW() 
+		WHERE wallet_address = $1
+	`
+	_, err := r.db.Exec(ctx, query, walletAddress)
+	return err
+}
+
+func (r *Repository) IncrementUserInviteCountByID(ctx context.Context, userID int64) error {
+	query := `
+		UPDATE users 
+		SET successful_invites = COALESCE(successful_invites, 0) + 1, updated_at = NOW() 
+		WHERE id = $1
+	`
+	_, err := r.db.Exec(ctx, query, userID)
+	return err
+}
+
+func (r *Repository) MarkFiveDigitDIDClaimed(ctx context.Context, userID int64) error {
+	query := `UPDATE users SET five_digit_did_claimed = TRUE, updated_at = NOW() WHERE id = $1`
+	_, err := r.db.Exec(ctx, query, userID)
+	return err
+}
+
+func (r *Repository) SetUserInviteCode(ctx context.Context, userID int64, inviteCode string) error {
+	query := `UPDATE users SET invite_code = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.Exec(ctx, query, inviteCode, userID)
+	return err
+}
+
+func (r *Repository) GetUserByInviteCode(ctx context.Context, inviteCode string) (*model.User, error) {
+	query := `SELECT id, wallet_address, email, password_hash, auth_type, email_verified, did, display_id, human_score, successful_invites, five_digit_did_claimed, invite_code, invited_by, metadata, created_at, updated_at FROM users WHERE invite_code = $1`
+	row := r.db.QueryRow(ctx, query, inviteCode)
+
+	var user model.User
+	err := row.Scan(&user.ID, &user.WalletAddress, &user.Email, &user.PasswordHash, &user.AuthType, &user.EmailVerified, &user.DID, &user.DisplayID, &user.HumanScore, &user.SuccessfulInvites, &user.FiveDigitDIDClaimed, &user.InviteCode, &user.InvitedBy, &user.Metadata, &user.CreatedAt, &user.UpdatedAt)
+	if err != nil {
+		if err.Error() == "no rows in result set" {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
+func (r *Repository) SetUserInvitedBy(ctx context.Context, userID int64, inviterID int64) error {
+	query := `UPDATE users SET invited_by = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.db.Exec(ctx, query, inviterID, userID)
 	return err
 }
 

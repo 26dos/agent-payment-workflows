@@ -58,13 +58,20 @@ func main() {
 	repo := repository.New(pool)
 	svc := service.New(repo)
 	emailSvc := email.New(cfg)
-	h := handler.New(svc, cfg.JWTSecret, emailSvc)
+	h := handler.NewWithGoogle(svc, cfg.JWTSecret, emailSvc, cfg.GoogleClientID, cfg.GoogleClientSecret, cfg.GoogleRedirectURI)
 
 	// Log email service status
 	if emailSvc.IsConfigured() {
 		log.Info().Msg("Email service configured and ready")
 	} else {
 		log.Warn().Msg("Email service not configured - verification codes will be returned in API response (dev mode)")
+	}
+	
+	// Log Google OAuth status
+	if cfg.GoogleClientID != "" {
+		log.Info().Msg("Google OAuth configured and ready")
+	} else {
+		log.Warn().Msg("Google OAuth not configured - Google login will be unavailable")
 	}
 
 	// Setup router
@@ -103,6 +110,10 @@ func main() {
 			auth.POST("/email/register", h.EmailRegister)
 			auth.POST("/email/login", h.EmailLogin)
 			auth.POST("/email/login-with-code", h.EmailLoginWithCode)
+
+			// Google OAuth
+			auth.GET("/google/url", h.GetGoogleAuthURL)
+			auth.POST("/google", h.GoogleLogin)
 		}
 
 		// Public routes (no auth required)
@@ -219,6 +230,9 @@ func main() {
 				dids.GET("/my", h.GetMyDIDs)
 				dids.GET("/validate", h.ValidateDisplayID)
 				dids.GET("/off-chain/:display_id", h.GetOffChainDID)
+				dids.GET("/invite-progress", h.GetInviteProgress)
+				dids.POST("/claim-five-digit", h.ClaimFiveDigitDID)
+				dids.GET("/invite-code", h.GetMyInviteCode)
 			}
 
 			// DID transfer routes

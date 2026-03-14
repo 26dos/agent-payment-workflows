@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAccount, useReadContract, usePublicClient, useConnect } from 'wagmi';
+import { useTranslations } from 'next-intl';
 import { useAppStore } from '@/lib/store';
 import { agentApi } from '@/lib/api';
 import { StatsCards } from '@/components/dashboard/StatsCards';
@@ -31,6 +32,7 @@ export default function DashboardPage() {
   const { user, agents, tasks, setAgents, setTasks, setDashboardStats, hasWallet, isEmailUser } = useAppStore();
   const [showBindWallet, setShowBindWallet] = useState(false);
   const publicClient = usePublicClient();
+  const t = useTranslations();
 
   // Email user with bound wallet but not connected
   const needsWalletConnection = isEmailUser() && hasWallet() && !isConnected;
@@ -159,18 +161,18 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Dashboard</h1>
+        <h1 className="text-3xl font-bold">{t('dashboard.title')}</h1>
         <div className="flex gap-2">
           <Button asChild variant="outline">
             <Link href="/dashboard/agents">
               <Plus className="mr-2 h-4 w-4" />
-              New Agent
+              {t('dashboard.newAgent')}
             </Link>
           </Button>
           <Button asChild>
             <Link href="/dashboard/tasks/new">
               <Plus className="mr-2 h-4 w-4" />
-              Create Task
+              {t('dashboard.createTask')}
             </Link>
           </Button>
         </div>
@@ -180,16 +182,16 @@ export default function DashboardPage() {
       {isEmailUser() && !hasWallet() && (
         <Alert className="border-amber-200 bg-amber-50">
           <AlertCircle className="h-4 w-4 text-amber-600" />
-          <AlertTitle className="text-amber-800">Bind Wallet for Full Access</AlertTitle>
+          <AlertTitle className="text-amber-800">{t('dashboard.bindWalletTitle')}</AlertTitle>
           <AlertDescription className="text-amber-700">
-            You&apos;re signed in with email. Bind a wallet to create tasks, manage transactions, and access all features.
+            {t('dashboard.bindWalletDesc')}
             <Button
               variant="link"
               className="p-0 h-auto ml-1 text-amber-800 hover:text-amber-900"
               onClick={() => setShowBindWallet(true)}
             >
               <Wallet className="h-4 w-4 mr-1" />
-              Bind Wallet Now
+              {t('dashboard.bindWalletNow')}
             </Button>
           </AlertDescription>
         </Alert>
@@ -199,10 +201,9 @@ export default function DashboardPage() {
       {needsWalletConnection && (
         <Alert className="border-blue-200 bg-blue-50">
           <Wallet className="h-4 w-4 text-blue-600" />
-          <AlertTitle className="text-blue-800">Connect Your Wallet</AlertTitle>
+          <AlertTitle className="text-blue-800">{t('dashboard.connectWalletTitle')}</AlertTitle>
           <AlertDescription className="text-blue-700">
-            Your wallet ({user?.wallet_address?.slice(0, 6)}...{user?.wallet_address?.slice(-4)}) is bound to this account.
-            Connect it to sign transactions and perform business operations.
+            {t('dashboard.connectWalletDesc')}
             <div className="flex gap-2 mt-2">
               {connectors.map((connector) => (
                 <Button
@@ -212,7 +213,7 @@ export default function DashboardPage() {
                   className="bg-blue-600 hover:bg-blue-700"
                 >
                   <Wallet className="h-4 w-4 mr-1" />
-                  Connect {connector.name}
+                  {connector.name}
                 </Button>
               ))}
             </div>
@@ -238,21 +239,21 @@ export default function DashboardPage() {
           {/* Agents Section */}
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Your Agents</CardTitle>
+              <CardTitle>{t('dashboard.yourAgents')}</CardTitle>
               <Button asChild variant="ghost" size="sm">
                 <Link href="/dashboard/agents">
-                  View All <ArrowRight className="ml-2 h-4 w-4" />
+                  {t('dashboard.viewAll')} <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
             </CardHeader>
             <CardContent>
               {agents.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <p className="text-muted-foreground">No agents yet</p>
+                  <p className="text-muted-foreground">{t('dashboard.noAgentsYet')}</p>
                   <Button asChild variant="outline" className="mt-4">
                     <Link href="/dashboard/agents">
                       <Plus className="mr-2 h-4 w-4" />
-                      Create Your First Agent
+                      {t('dashboard.createFirstAgent')}
                     </Link>
                   </Button>
                 </div>

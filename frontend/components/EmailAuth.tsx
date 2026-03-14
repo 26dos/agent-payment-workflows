@@ -13,16 +13,17 @@ type AuthMode = 'login' | 'register' | 'code-sent';
 
 interface EmailAuthProps {
   onBack?: () => void;
+  inviteCode?: string;
 }
 
-export function EmailAuth({ onBack }: EmailAuthProps) {
+export function EmailAuth({ onBack, inviteCode = '' }: EmailAuthProps) {
   const { setAuth, isAuthenticated } = useAppStore();
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [code, setCode] = useState('');
-  const [displayId, setDisplayId] = useState('');
+  const [referralCode, setReferralCode] = useState(inviteCode); // Use invite code from URL or let user enter
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -92,7 +93,7 @@ export function EmailAuth({ onBack }: EmailAuthProps) {
         email,
         password,
         code,
-        display_id: displayId || undefined,
+        invite_code: referralCode || undefined,
       });
       setAuth(token, user);
     } catch (err: any) {
@@ -334,13 +335,13 @@ export function EmailAuth({ onBack }: EmailAuthProps) {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="display-id">Display ID (Optional)</Label>
+              <Label htmlFor="referral-code">Invite Code (Optional)</Label>
               <Input
-                id="display-id"
+                id="referral-code"
                 type="text"
-                placeholder="e.g., CP-USER1234"
-                value={displayId}
-                onChange={(e) => setDisplayId(e.target.value.toUpperCase())}
+                placeholder="Enter invite code if you have one"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
                 disabled={isLoading}
               />
               <p className="text-xs text-muted-foreground">

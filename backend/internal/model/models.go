@@ -15,18 +15,22 @@ const (
 
 // User represents a human user with a Root DID
 type User struct {
-	ID            int64      `json:"id" db:"id"`
-	WalletAddress *string    `json:"wallet_address" db:"wallet_address"`
-	Email         *string    `json:"email" db:"email"`
-	PasswordHash  *string    `json:"-" db:"password_hash"`
-	AuthType      AuthType   `json:"auth_type" db:"auth_type"`
-	EmailVerified bool       `json:"email_verified" db:"email_verified"`
-	DID           string     `json:"did" db:"did"`
-	DisplayID     *string    `json:"display_id" db:"display_id"`
-	HumanScore    int        `json:"human_score" db:"human_score"`
-	Metadata      string     `json:"metadata" db:"metadata"`
-	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at" db:"updated_at"`
+	ID                  int64      `json:"id" db:"id"`
+	WalletAddress       *string    `json:"wallet_address" db:"wallet_address"`
+	Email               *string    `json:"email" db:"email"`
+	PasswordHash        *string    `json:"-" db:"password_hash"`
+	AuthType            AuthType   `json:"auth_type" db:"auth_type"`
+	EmailVerified       bool       `json:"email_verified" db:"email_verified"`
+	DID                 string     `json:"did" db:"did"`
+	DisplayID           *string    `json:"display_id" db:"display_id"`
+	HumanScore          int        `json:"human_score" db:"human_score"`
+	SuccessfulInvites   *int       `json:"successful_invites" db:"successful_invites"`
+	FiveDigitDIDClaimed *bool      `json:"five_digit_did_claimed" db:"five_digit_did_claimed"`
+	InviteCode          *string    `json:"invite_code" db:"invite_code"`
+	InvitedBy           *int64     `json:"invited_by" db:"invited_by"`
+	Metadata            string     `json:"metadata" db:"metadata"`
+	CreatedAt           time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // HasWallet checks if user has connected a wallet
