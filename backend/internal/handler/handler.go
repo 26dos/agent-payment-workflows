@@ -2,7 +2,6 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1756,41 +1755,27 @@ func (h *Handler) GetInviteProgress(c *gin.Context) {
 	var claimed bool
 	var err error
 
-	// Try wallet address first
 	walletAddress, walletExists := c.Get("wallet_address")
 	email, emailExists := c.Get("email")
 	
-	log.Info().
-		Bool("walletExists", walletExists).
-		Bool("emailExists", emailExists).
-		Str("walletAddress", fmt.Sprintf("%v", walletAddress)).
-		Str("email", fmt.Sprintf("%v", email)).
-		Msg("[GetInviteProgress] Starting")
-	
 	if walletExists && walletAddress != nil && walletAddress.(string) != "" {
-		log.Info().Str("walletAddress", walletAddress.(string)).Msg("[GetInviteProgress] Using wallet")
 		inviteCount, claimed, err = h.svc.GetUserInviteProgress(c.Request.Context(), walletAddress.(string))
 	} else if emailExists && email != nil && email.(string) != "" {
-		log.Info().Str("email", email.(string)).Msg("[GetInviteProgress] Using email")
 		inviteCount, claimed, err = h.svc.GetUserInviteProgressByEmail(c.Request.Context(), email.(string))
 	} else {
-		log.Warn().Msg("[GetInviteProgress] No auth found")
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "authentication required"})
 		return
 	}
 
 	if err != nil {
-		log.Error().Err(err).Msg("[GetInviteProgress] Error getting progress")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get invite progress: " + err.Error()})
 		return
 	}
 
-	log.Info().Int("inviteCount", inviteCount).Bool("claimed", claimed).Msg("[GetInviteProgress] Result")
-
 	c.JSON(http.StatusOK, gin.H{
 		"invite_count":      inviteCount,
-		"required_invites":  1,
-		"eligible":          inviteCount >= 1,
+		"required_invites":  3,
+		"eligible":          inviteCount >= 3,
 		"five_digit_claimed": claimed,
 	})
 }

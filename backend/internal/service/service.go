@@ -1403,8 +1403,8 @@ func (s *Service) ClaimFiveDigitDID(ctx context.Context, walletAddress string) (
 	if user.SuccessfulInvites != nil {
 		inviteCount = *user.SuccessfulInvites
 	}
-	if inviteCount < 1 {
-		return nil, fmt.Errorf("need 1 successful invite to claim 5-digit DID. Current: %d/1", inviteCount)
+	if inviteCount < 3 {
+		return nil, fmt.Errorf("need 3 successful invites to claim 5-digit DID. Current: %d/3", inviteCount)
 	}
 	
 	// If user already has a DID, deactivate the old one
@@ -1487,8 +1487,8 @@ func (s *Service) ClaimFiveDigitDIDByEmail(ctx context.Context, email string) (*
 	if user.SuccessfulInvites != nil {
 		inviteCount = *user.SuccessfulInvites
 	}
-	if inviteCount < 1 {
-		return nil, fmt.Errorf("need 1 successful invite to claim 5-digit DID. Current: %d/1", inviteCount)
+	if inviteCount < 3 {
+		return nil, fmt.Errorf("need 3 successful invites to claim 5-digit DID. Current: %d/3", inviteCount)
 	}
 	
 	// If user already has a DID, deactivate the old one
