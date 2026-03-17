@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useAppStore } from '@/lib/store';
 import { ConnectWallet } from '@/components/ConnectWallet';
+import { EmailAuth } from '@/components/EmailAuth';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { 
   Briefcase, 
@@ -110,6 +111,7 @@ export default function Home() {
   const router = useRouter();
   const { isAuthenticated } = useAppStore();
   const [mounted, setMounted] = useState(false);
+  const [showEmailAuth, setShowEmailAuth] = useState(false);
   const t = useTranslations();
 
   useEffect(() => {
@@ -186,9 +188,9 @@ export default function Home() {
           
           {/* Main title */}
           <h1 className="text-5xl md:text-7xl font-bold mb-6">
-            <span className="gradient-text glow-text">{t('landing.heroHighlight')}</span>
-            <br />
             <span className="text-foreground">{t('landing.heroTitle')}</span>
+            <br />
+            <span className="gradient-text glow-text">{t('landing.heroHighlight')}</span>
           </h1>
           
           <p className="text-xl text-muted-foreground max-w-2xl mx-auto mb-10 leading-relaxed">
@@ -198,10 +200,7 @@ export default function Home() {
           {/* CTA Button */}
           <div className="mb-10">
             <button
-              onClick={() => {
-                const el = document.getElementById('auth-section');
-                el?.scrollIntoView({ behavior: 'smooth' });
-              }}
+              onClick={() => setShowEmailAuth(true)}
               className="relative inline-flex items-center gap-3 px-10 py-5 text-xl font-bold text-background bg-gradient-to-r from-primary via-cyan-400 to-accent rounded-2xl shadow-[0_0_40px_rgba(0,212,255,0.4)] hover:shadow-[0_0_60px_rgba(0,212,255,0.6)] hover:scale-105 transition-all duration-300 animate-pulse-glow"
             >
               <Fingerprint className="h-7 w-7" />
@@ -210,8 +209,12 @@ export default function Home() {
             </button>
           </div>
           
-          <div id="auth-section" className="flex justify-center gap-6 flex-wrap scroll-mt-24">
-            <ConnectWallet />
+          <div className="flex justify-center gap-6 flex-wrap">
+            {showEmailAuth ? (
+              <EmailAuth onBack={() => setShowEmailAuth(false)} inviteCode="" />
+            ) : (
+              <ConnectWallet />
+            )}
           </div>
           
           {/* Stats */}
