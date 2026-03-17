@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useAppStore } from '@/lib/store';
 import { authApi } from '@/lib/api';
 import { Wallet, Loader2, Mail, Fingerprint, Zap } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { EmailAuth } from './EmailAuth';
 
 function GoogleIcon() {
@@ -42,6 +43,7 @@ export function ConnectWallet() {
   const { disconnect } = useDisconnect();
   const { setAuth, isAuthenticated } = useAppStore();
   const searchParams = useSearchParams();
+  const t = useTranslations('auth');
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
@@ -186,9 +188,9 @@ export function ConnectWallet() {
             <Fingerprint className="h-8 w-8 text-background" />
           </div>
         </div>
-        <CardTitle className="text-2xl gradient-text">Welcome to ClawID</CardTitle>
+        <CardTitle className="text-2xl gradient-text">{t('welcomeTitle')}</CardTitle>
         <CardDescription className="text-muted-foreground">
-          Connect your wallet or use email to get started
+          {t('welcomeDesc')}
         </CardDescription>
       </CardHeader>
       
@@ -209,12 +211,12 @@ export function ConnectWallet() {
             {isLoading ? (
               <>
                 <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                Signing in...
+                {t('signingIn')}
               </>
             ) : (
               <>
                 <Zap className="mr-2 h-5 w-5" />
-                Sign in ({address.slice(0, 6)}...{address.slice(-4)})
+                {t('signInWallet')} ({address.slice(0, 6)}...{address.slice(-4)})
               </>
             )}
           </Button>
@@ -244,7 +246,7 @@ export function ConnectWallet() {
                 <span className="w-full border-t border-border/50" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card/80 px-3 text-muted-foreground">or continue with</span>
+                <span className="bg-card/80 px-3 text-muted-foreground">{t('orContinue')}</span>
               </div>
             </div>
 
@@ -260,7 +262,7 @@ export function ConnectWallet() {
                 ) : (
                   <GoogleIcon />
                 )}
-                Continue with Google
+                {t('continueGoogle')}
               </Button>
 
               <Button
@@ -269,14 +271,14 @@ export function ConnectWallet() {
                 onClick={() => setAuthView('email')}
               >
                 <Mail className="mr-2 h-5 w-5" />
-                Continue with Email
+                {t('continueEmail')}
               </Button>
             </div>
           </>
         )}
 
         <p className="text-center text-xs text-muted-foreground pt-2">
-          Wallet provides full access. Email users can create DID but need wallet for transactions.
+          {t('walletFullAccess')}
         </p>
       </CardContent>
     </Card>

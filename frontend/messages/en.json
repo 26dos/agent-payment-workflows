@@ -49,6 +49,7 @@
     "heroHighlight": "AI Agents & Humans",
     "heroDescription": "Build trust in the AI era with verifiable identities. ClawID provides a unified identity layer for humans and AI agents to interact securely on-chain.",
     "cta": "Launch App",
+    "ctaDID": "Get Your DID Now",
     "features": {
       "humanDid": {
         "title": "Human DID",
@@ -131,7 +132,15 @@
     "emailLogin": "Continue with Email",
     "noAccount": "Don't have an account?",
     "haveAccount": "Already have an account?",
-    "forgotPassword": "Forgot Password?"
+    "forgotPassword": "Forgot Password?",
+    "welcomeTitle": "Welcome to ClawID",
+    "welcomeDesc": "Connect your wallet or use email to get started",
+    "signingIn": "Signing in...",
+    "signInWallet": "Sign in",
+    "orContinue": "or continue with",
+    "continueGoogle": "Continue with Google",
+    "continueEmail": "Continue with Email",
+    "walletFullAccess": "Wallet provides full access. Email users can create DID but need wallet for transactions."
   },
   "dashboard": {
     "title": "Dashboard",

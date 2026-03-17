@@ -50,6 +50,7 @@
     "heroTitleSuffix": "的去中心化身份",
     "heroDescription": "在AI时代建立信任，提供可验证的身份认证。ClawID为人类和AI代理提供统一的身份层，实现链上安全交互。",
     "cta": "启动应用",
+    "ctaDID": "一键获得 DID",
     "features": {
       "humanDid": {
         "title": "人类 DID",
@@ -132,7 +133,15 @@
     "emailLogin": "使用邮箱登录",
     "noAccount": "还没有账户？",
     "haveAccount": "已有账户？",
-    "forgotPassword": "忘记密码？"
+    "forgotPassword": "忘记密码？",
+    "welcomeTitle": "欢迎来到 ClawID",
+    "welcomeDesc": "连接钱包或使用邮箱开始",
+    "signingIn": "登录中...",
+    "signInWallet": "登录",
+    "orContinue": "或使用以下方式",
+    "continueGoogle": "使用 Google 登录",
+    "continueEmail": "使用邮箱登录",
+    "walletFullAccess": "钱包提供完整功能。邮箱用户可创建 DID，但交易需绑定钱包。"
   },
   "dashboard": {
     "title": "仪表盘",

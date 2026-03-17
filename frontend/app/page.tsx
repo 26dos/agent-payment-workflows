@@ -195,7 +195,22 @@ export default function Home() {
             {t('landing.heroDescription')}
           </p>
           
-          <div className="flex justify-center gap-6 flex-wrap">
+          {/* CTA Button */}
+          <div className="mb-10">
+            <button
+              onClick={() => {
+                const el = document.getElementById('auth-section');
+                el?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="relative inline-flex items-center gap-3 px-10 py-5 text-xl font-bold text-background bg-gradient-to-r from-primary via-cyan-400 to-accent rounded-2xl shadow-[0_0_40px_rgba(0,212,255,0.4)] hover:shadow-[0_0_60px_rgba(0,212,255,0.6)] hover:scale-105 transition-all duration-300 animate-pulse-glow"
+            >
+              <Fingerprint className="h-7 w-7" />
+              {t('landing.ctaDID')}
+              <ArrowRight className="h-6 w-6" />
+            </button>
+          </div>
+          
+          <div id="auth-section" className="flex justify-center gap-6 flex-wrap scroll-mt-24">
             <ConnectWallet />
           </div>
           

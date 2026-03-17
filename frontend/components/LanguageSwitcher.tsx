@@ -2,22 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Globe, Check } from 'lucide-react';
 
 const locales = ['en', 'zh'] as const;
 type Locale = (typeof locales)[number];
-
-const localeNames: Record<Locale, string> = {
-  en: 'English',
-  zh: '中文',
-};
 
 export function LanguageSwitcher() {
   const router = useRouter();
@@ -35,42 +22,29 @@ export function LanguageSwitcher() {
     }
   }, []);
 
-  const handleLocaleChange = (locale: Locale) => {
-    document.cookie = `locale=${locale}; path=/; max-age=${60 * 60 * 24 * 365}`;
-    setCurrentLocale(locale);
+  const toggleLocale = () => {
+    const next: Locale = currentLocale === 'en' ? 'zh' : 'en';
+    document.cookie = `locale=${next}; path=/; max-age=${60 * 60 * 24 * 365}`;
+    setCurrentLocale(next);
     router.refresh();
   };
 
   if (!mounted) {
     return (
-      <Button variant="ghost" size="icon" className="h-9 w-9">
-        <Globe className="h-4 w-4" />
-      </Button>
+      <button className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground">
+        En / 中文
+      </button>
     );
   }
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-9 w-9 hover:bg-primary/10">
-          <Globe className="h-4 w-4" />
-          <span className="sr-only">Switch language</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-[120px]">
-        {locales.map((locale) => (
-          <DropdownMenuItem
-            key={locale}
-            onClick={() => handleLocaleChange(locale)}
-            className="flex items-center justify-between cursor-pointer"
-          >
-            <span>{localeNames[locale]}</span>
-            {currentLocale === locale && (
-              <Check className="h-4 w-4 text-primary" />
-            )}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <button
+      onClick={toggleLocale}
+      className="px-3 py-1.5 rounded-lg text-sm font-medium border border-border/50 hover:border-primary/50 hover:bg-primary/5 transition-all flex items-center gap-1.5"
+    >
+      <span className={currentLocale === 'en' ? 'text-primary font-bold' : 'text-muted-foreground'}>En</span>
+      <span className="text-border">/</span>
+      <span className={currentLocale === 'zh' ? 'text-primary font-bold' : 'text-muted-foreground'}>中文</span>
+    </button>
   );
 }
