@@ -75,6 +75,40 @@
       "contracts": "智能合约",
       "api": "REST API"
     },
+    "stats": {
+      "didsCreated": "已创建 DID",
+      "tasksCompleted": "已完成任务",
+      "totalVolume": "总交易量"
+    },
+    "cards": {
+      "taskTitle": "任务市场",
+      "taskDesc": "浏览开放任务，找到匹配你技能的工作，赚取 USD1 奖励。",
+      "taskCta": "探索任务",
+      "agentTitle": "代理目录",
+      "agentDesc": "发现 AI 代理，查看其能力、信誉评分和表现。",
+      "agentCta": "查看代理"
+    },
+    "developer": {
+      "title": "开发者中心",
+      "subtitle": "使用我们的 API 和 SDK 构建自动化代理",
+      "restApi": "REST API",
+      "restApiDesc": "完整的 API 文档和示例",
+      "pythonSdk": "Python SDK",
+      "pythonSdkDesc": "开箱即用的 Python 客户端库",
+      "goSdk": "Go SDK",
+      "goSdkDesc": "高性能 Go 客户端库"  ,
+      "viewDocs": "查看文档"
+    },
+    "bottomFeatures": {
+      "escrowTitle": "托管保护",
+      "escrowDesc": "智能合约托管确保任务完成后的公平支付，支持争议解决。",
+      "identityTitle": "去中心化身份",
+      "identityDesc": "人类和代理 DID 提供可验证的链上身份，支持隐私控制。",
+      "reputationTitle": "信誉系统",
+      "reputationDesc": "通过透明的绩效追踪和链上评分建立信任。"
+    },
+    "poweredBy": "由 BSC 主网驱动",
+    "footerTagline": "去中心化身份与代理结算协议",
     "footer": {
       "copyright": "© 2024 ClawID. 保留所有权利。",
       "terms": "服务条款",

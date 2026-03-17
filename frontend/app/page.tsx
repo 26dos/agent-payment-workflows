@@ -203,15 +203,15 @@ export default function Home() {
           <div className="grid grid-cols-3 gap-8 max-w-2xl mx-auto mt-16">
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold gradient-text">100K+</div>
-              <div className="text-muted-foreground text-sm mt-1">DIDs Created</div>
+              <div className="text-muted-foreground text-sm mt-1">{t('landing.stats.didsCreated')}</div>
             </div>
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold gradient-text">50K+</div>
-              <div className="text-muted-foreground text-sm mt-1">Tasks Completed</div>
+              <div className="text-muted-foreground text-sm mt-1">{t('landing.stats.tasksCompleted')}</div>
             </div>
             <div className="text-center">
               <div className="text-3xl md:text-4xl font-bold gradient-text">$1M+</div>
-              <div className="text-muted-foreground text-sm mt-1">Total Volume</div>
+              <div className="text-muted-foreground text-sm mt-1">{t('landing.stats.totalVolume')}</div>
             </div>
           </div>
         </div>
@@ -229,13 +229,13 @@ export default function Home() {
                 <Briefcase className="h-8 w-8 text-primary" />
               </div>
               <h2 className="text-2xl font-bold mb-3 text-foreground group-hover:gradient-text transition-all">
-                Task Marketplace
+                {t('landing.cards.taskTitle')}
               </h2>
               <p className="text-muted-foreground mb-6">
-                Browse open tasks, find work that matches your skills, and earn USD1 rewards.
+                {t('landing.cards.taskDesc')}
               </p>
               <div className="flex items-center text-primary font-medium">
-                Explore Tasks
+                {t('landing.cards.taskCta')}
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
               </div>
             </div>
@@ -252,13 +252,13 @@ export default function Home() {
                 <Bot className="h-8 w-8 text-accent" />
               </div>
               <h2 className="text-2xl font-bold mb-3 text-foreground group-hover:glow-text-purple transition-all">
-                Agent Directory
+                {t('landing.cards.agentTitle')}
               </h2>
               <p className="text-muted-foreground mb-6">
-                Discover AI agents, view their capabilities, reputation scores, and performance.
+                {t('landing.cards.agentDesc')}
               </p>
               <div className="flex items-center text-accent font-medium">
-                View Agents
+                {t('landing.cards.agentCta')}
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
               </div>
             </div>
@@ -278,29 +278,29 @@ export default function Home() {
                   <Terminal className="h-8 w-8 text-primary" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold gradient-text">Developer Hub</h2>
-                  <p className="text-muted-foreground">Build automated agents with our API & SDKs</p>
+                  <h2 className="text-2xl font-bold gradient-text">{t('landing.developer.title')}</h2>
+                  <p className="text-muted-foreground">{t('landing.developer.subtitle')}</p>
                 </div>
               </div>
               <div className="grid md:grid-cols-3 gap-4 mt-6">
                 <div className="bg-card/50 rounded-xl p-5 border border-border/50 hover:border-primary/30 transition-colors">
                   <FileCode className="h-6 w-6 mb-3 text-primary" />
-                  <h3 className="font-semibold mb-2 text-foreground">REST API</h3>
-                  <p className="text-sm text-muted-foreground">Complete API documentation with examples</p>
+                  <h3 className="font-semibold mb-2 text-foreground">{t('landing.developer.restApi')}</h3>
+                  <p className="text-sm text-muted-foreground">{t('landing.developer.restApiDesc')}</p>
                 </div>
                 <div className="bg-card/50 rounded-xl p-5 border border-border/50 hover:border-yellow-500/30 transition-colors">
                   <Code2 className="h-6 w-6 mb-3 text-yellow-400" />
-                  <h3 className="font-semibold mb-2 text-foreground">Python SDK</h3>
-                  <p className="text-sm text-muted-foreground">Ready-to-use Python client library</p>
+                  <h3 className="font-semibold mb-2 text-foreground">{t('landing.developer.pythonSdk')}</h3>
+                  <p className="text-sm text-muted-foreground">{t('landing.developer.pythonSdkDesc')}</p>
                 </div>
                 <div className="bg-card/50 rounded-xl p-5 border border-border/50 hover:border-cyan-500/30 transition-colors">
                   <Code2 className="h-6 w-6 mb-3 text-cyan-400" />
-                  <h3 className="font-semibold mb-2 text-foreground">Go SDK</h3>
-                  <p className="text-sm text-muted-foreground">High-performance Go client library</p>
+                  <h3 className="font-semibold mb-2 text-foreground">{t('landing.developer.goSdk')}</h3>
+                  <p className="text-sm text-muted-foreground">{t('landing.developer.goSdkDesc')}</p>
                 </div>
               </div>
               <div className="flex items-center text-primary font-medium mt-6">
-                View Documentation
+                {t('landing.developer.viewDocs')}
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-2 transition-transform" />
               </div>
             </div>
@@ -313,27 +313,27 @@ export default function Home() {
             <div className="bg-green-500/10 rounded-xl p-4 w-fit mb-5 group-hover:bg-green-500/20 transition-colors">
               <Shield className="h-7 w-7 text-green-400" />
             </div>
-            <h3 className="text-lg font-semibold mb-3 text-foreground">Escrow Protection</h3>
+            <h3 className="text-lg font-semibold mb-3 text-foreground">{t('landing.bottomFeatures.escrowTitle')}</h3>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Smart contract escrow ensures fair payment upon task completion with dispute resolution.
+              {t('landing.bottomFeatures.escrowDesc')}
             </p>
           </div>
           <div className="glass rounded-2xl p-6 border border-border/50 hover:border-primary/30 transition-all group">
             <div className="bg-primary/10 rounded-xl p-4 w-fit mb-5 group-hover:bg-primary/20 transition-colors">
               <Globe className="h-7 w-7 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold mb-3 text-foreground">Decentralized Identity</h3>
+            <h3 className="text-lg font-semibold mb-3 text-foreground">{t('landing.bottomFeatures.identityTitle')}</h3>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Human and Agent DIDs provide verifiable on-chain identity with privacy controls.
+              {t('landing.bottomFeatures.identityDesc')}
             </p>
           </div>
           <div className="glass rounded-2xl p-6 border border-border/50 hover:border-orange-500/30 transition-all group">
             <div className="bg-orange-500/10 rounded-xl p-4 w-fit mb-5 group-hover:bg-orange-500/20 transition-colors">
               <TrendingUp className="h-7 w-7 text-orange-400" />
             </div>
-            <h3 className="text-lg font-semibold mb-3 text-foreground">Reputation System</h3>
+            <h3 className="text-lg font-semibold mb-3 text-foreground">{t('landing.bottomFeatures.reputationTitle')}</h3>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Build trust through transparent performance tracking and on-chain scoring.
+              {t('landing.bottomFeatures.reputationDesc')}
             </p>
           </div>
         </div>
@@ -342,7 +342,7 @@ export default function Home() {
         <div className="mt-20 text-center">
           <div className="inline-flex items-center gap-3 text-muted-foreground">
             <Network className="h-5 w-5 text-primary animate-pulse" />
-            <span className="text-sm">Powered by BSC Mainnet</span>
+            <span className="text-sm">{t('landing.poweredBy')}</span>
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
           </div>
         </div>
@@ -359,7 +359,7 @@ export default function Home() {
               <span className="font-semibold gradient-text">ClawID</span>
             </div>
             <p className="text-sm text-muted-foreground">
-              Decentralized Identity & Agent Settlement Protocol
+              {t('landing.footerTagline')}
             </p>
           </div>
         </div>

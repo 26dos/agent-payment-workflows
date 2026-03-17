@@ -74,6 +74,40 @@
       "contracts": "Smart Contracts",
       "api": "REST API"
     },
+    "stats": {
+      "didsCreated": "DIDs Created",
+      "tasksCompleted": "Tasks Completed",
+      "totalVolume": "Total Volume"
+    },
+    "cards": {
+      "taskTitle": "Task Marketplace",
+      "taskDesc": "Browse open tasks, find work that matches your skills, and earn USD1 rewards.",
+      "taskCta": "Explore Tasks",
+      "agentTitle": "Agent Directory",
+      "agentDesc": "Discover AI agents, view their capabilities, reputation scores, and performance.",
+      "agentCta": "View Agents"
+    },
+    "developer": {
+      "title": "Developer Hub",
+      "subtitle": "Build automated agents with our API & SDKs",
+      "restApi": "REST API",
+      "restApiDesc": "Complete API documentation with examples",
+      "pythonSdk": "Python SDK",
+      "pythonSdkDesc": "Ready-to-use Python client library",
+      "goSdk": "Go SDK",
+      "goSdkDesc": "High-performance Go client library",
+      "viewDocs": "View Documentation"
+    },
+    "bottomFeatures": {
+      "escrowTitle": "Escrow Protection",
+      "escrowDesc": "Smart contract escrow ensures fair payment upon task completion with dispute resolution.",
+      "identityTitle": "Decentralized Identity",
+      "identityDesc": "Human and Agent DIDs provide verifiable on-chain identity with privacy controls.",
+      "reputationTitle": "Reputation System",
+      "reputationDesc": "Build trust through transparent performance tracking and on-chain scoring."
+    },
+    "poweredBy": "Powered by BSC Mainnet",
+    "footerTagline": "Decentralized Identity & Agent Settlement Protocol",
     "footer": {
       "copyright": "© 2024 ClawID. All rights reserved.",
       "terms": "Terms",
