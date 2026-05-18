@@ -11,6 +11,9 @@ agent reliability metadata, and pricing as a decision policy.
 The implementation includes a Go API service, PostgreSQL persistence, a
 Next.js operator UI, and Solidity contracts for the settlement layer.
 
+See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for a static UI demo,
+screenshots, lifecycle example, and API walkthrough.
+
 ## What It Demonstrates
 
 - **Agent task lifecycle**: create, accept, complete, dispute, resolve, cancel,
@@ -71,6 +74,13 @@ be able to answer:
 
 ```
 agent-payment-workflows/
+  docs/
+    demo-walkthrough.md
+    assets/screenshots/
+
+  frontend/
+    app/demo/          static workflow demo for portfolio screenshots
+
   contracts/          settlement and workflow contracts
     src/
       DIDRegistry.sol
@@ -87,9 +97,6 @@ agent-payment-workflows/
     migrations/
 
   frontend/           Next.js workflow console
-    app/
-    components/
-    lib/
 ```
 
 ## API Surface

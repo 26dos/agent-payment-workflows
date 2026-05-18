@@ -5,8 +5,8 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
-  title: 'ClawID - Agentic Settlement Protocol',
-  description: 'The native payment protocol for AI agents on blockchain',
+  title: 'Agent Payment Workflows',
+  description: 'Workflow sandbox for AI agent tasks, delegated spending, escrow state, pricing, and reputation.',
 };
 
 export default async function RootLayout({
