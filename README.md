@@ -11,8 +11,34 @@ agent reliability metadata, and pricing as a decision policy.
 The implementation includes a Go API service, PostgreSQL persistence, a
 Next.js operator UI, and Solidity contracts for the settlement layer.
 
-See [docs/demo-walkthrough.md](docs/demo-walkthrough.md) for a static UI demo,
-screenshots, lifecycle example, and API walkthrough.
+## Demo Snapshot
+
+The repo includes a static demo route that can be reviewed without a wallet,
+backend, database, or testnet deployment:
+
+```bash
+cd frontend
+npm install
+npm run dev
+open http://localhost:3000/demo
+```
+
+![Agent workflow desktop demo](docs/assets/screenshots/agent-workflow-demo.png)
+
+The route is implemented at `frontend/app/demo/page.tsx`. It is organized
+around the questions a reviewer should be able to answer after an agent performs
+paid work:
+
+- who authorized the agent to spend?
+- what mandate limits applied?
+- how was the task priced?
+- when was payment reserved?
+- what lifecycle state is the task in?
+- how did the outcome affect reliability metadata?
+- which events are available for review?
+
+Additional full-page and mobile screenshots live in
+[docs/demo-walkthrough.md](docs/demo-walkthrough.md).
 
 ## What It Demonstrates
 
@@ -101,6 +127,10 @@ agent-payment-workflows/
 
 ## API Surface
 
+The clean demo sequence is: register an agent, attach a spending mandate,
+calculate a quote, create a task, accept and fund it, then complete or dispute
+the outcome.
+
 ### Authentication
 
 - `GET /api/v1/auth/nonce`
@@ -127,6 +157,105 @@ agent-payment-workflows/
 ### Pricing
 
 - `POST /api/v1/pricing/calculate`
+
+## Example API Walkthrough
+
+### 1. Register Or Resolve An Agent
+
+```http
+POST /api/v1/agents
+Content-Type: application/json
+
+{
+  "name": "risk-reader/v2"
+}
+```
+
+Expected result:
+
+```json
+{
+  "id": 17,
+  "name": "risk-reader/v2",
+  "sub_did": "agent:pay:risk-reader-v2",
+  "agent_score": 91,
+  "status": "active"
+}
+```
+
+### 2. Attach A Spending Mandate
+
+```http
+PUT /api/v1/agents/17/mandate
+Content-Type: application/json
+
+{
+  "daily_limit": 500,
+  "single_limit": 300,
+  "expiry": "2026-06-30T23:59:59Z"
+}
+```
+
+### 3. Calculate A Quote
+
+```http
+POST /api/v1/pricing/calculate
+Content-Type: application/json
+
+{
+  "base_fee": 200,
+  "complexity": 2,
+  "reputation_score": 91
+}
+```
+
+Expected result:
+
+```json
+{
+  "base_fee": 200,
+  "final_price": 240,
+  "k_reputation": 0.9,
+  "k_complexity": 1.5,
+  "k_supply_demand": 0.89,
+  "insurance_premium": 18
+}
+```
+
+### 4. Create, Accept, And Resolve A Task
+
+```http
+POST /api/v1/tasks
+Content-Type: application/json
+
+{
+  "requester_did": "human:pay:ops-lead",
+  "title": "Summarize supplier risk report",
+  "description": "Read the latest supplier risk report and return a structured summary.",
+  "base_amount": 200,
+  "complexity": 2,
+  "metadata": "{\"trace_required\":true}"
+}
+```
+
+Then:
+
+```http
+PUT /api/v1/tasks/42/accept
+PUT /api/v1/tasks/42/complete
+```
+
+Or, if the output needs review:
+
+```http
+PUT /api/v1/tasks/42/dispute
+Content-Type: application/json
+
+{
+  "raised_by_did": "human:pay:ops-lead",
+  "reason": "Output omitted required citations."
+}
+```
 
 ## Pricing Policy
 
