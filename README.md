@@ -40,6 +40,11 @@ paid work:
 Additional full-page and mobile screenshots live in
 [docs/demo-walkthrough.md](docs/demo-walkthrough.md).
 
+Supporting design notes:
+
+- [Agent payment workflow product brief](docs/agent-payment-product-brief.md)
+- [Technical decision checklist](docs/technical-decision-checklist.md)
+
 ## What It Demonstrates
 
 - **Agent task lifecycle**: create, accept, complete, dispute, resolve, cancel,
